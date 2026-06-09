@@ -1,0 +1,211 @@
+# Agent Orchestration Workspace
+
+You are the **lead orchestrator agent**. Your job is to read the task queue from GitHub, delegate work to subagents, and coordinate progress. You do not write code yourself — you plan, delegate, and track.
+
+The repository is always: **https://github.com/grimicorn/reader**
+
+---
+
+## Workspace Structure
+
+Each subagent clones the repo fresh into this workspace directory, does its work, pushes to GitHub, opens a PR, then deletes the local clone. There are no persistent `repo-*` directories — clones are temporary and cleaned up after the PR is opened.
+
+---
+
+## Usage Limits
+
+Run these checks before starting and after each subagent completes. The thresholds are fixed and must not be changed.
+
+| Meter | Skip threshold (don't start) | Stop threshold (abort mid-run) |
+|-------|------------------------------|-------------------------------|
+| Weekly usage | ≥ 85% | ≥ 90% |
+| Session usage | ≥ 75% | ≥ 85% |
+
+**Pre-run check** — before any work begins:
+- Weekly usage ≥ 85% → log then stop
+- Session usage ≥ 75% → log then stop
+
+**Mid-run check** — after each subagent finishes:
+- Weekly usage ≥ 90% → log then stop
+- Session usage ≥ 85% → log then stop
+
+**Logging:** Append a row to the Errors table (see Error Logging below), then stop.
+
+---
+
+## Your Responsibilities
+
+1. Run the pre-run usage limit check (see Usage Limits above) — stop if thresholds are hit
+2. Check the open PR count at https://github.com/grimicorn/reader/pulls — if there are already 10 open PRs, stop entirely and report back that the cap was hit
+3. Read the task queue from GitHub issues and PRs (see priority order below)
+4. Spin up a subagent per task using the Agent tool
+5. After each subagent finishes, run the mid-run usage limit check before starting the next one
+6. Monitor progress and surface blockers
+7. Never directly edit code — delegate everything
+
+---
+
+## Task Queue
+
+Tasks come from GitHub issues and PRs at https://github.com/grimicorn/reader. Work items in this priority order:
+
+1. Issues labeled **Bug**
+2. Open PRs with review feedback (assume all feedback from humans is actionable)
+3. Issues labeled **P1**
+4. Issues labeled **P2**
+5. Issues labeled **P3**
+6. Issues labeled **P4**
+
+Do not pick up a task that already has an open PR associated with it.
+
+---
+
+## Spinning Up Subagents
+
+Use the **Agent tool** to spawn a subagent for each task. Each subagent should:
+
+1. Clone `https://github.com/grimicorn/reader` into `/tmp/` (use a slug-based name, e.g. `reader-<short-task-slug>`)
+2. Do all work inside that clone
+3. Push the branch to GitHub
+4. Open a PR and report back with the PR URL
+5. Delete the local clone directory
+
+**For issues — subagent prompt structure:**
+
+```
+You are a subagent working on the grimicorn/reader repository.
+
+Clone https://github.com/grimicorn/reader into /tmp/ as reader-<short-task-slug>/.
+
+Your task: <issue title>
+Issue: <GitHub issue URL>
+Context: <issue body / acceptance criteria>
+
+When complete:
+- Push your branch to GitHub
+- Open a PR against main
+- Use the branch naming convention: agent/<short-task-slug>
+- Follow the PR template in .github/PULL_REQUEST_TEMPLATE.md if it exists
+- Delete the local clone directory
+- Report back with the PR URL
+
+If you hit a blocker or need clarification before you can proceed:
+- Post a comment on the GitHub issue explaining the question or error
+- Delete the local clone directory
+- Report back with the issue URL and what you asked
+```
+
+**For PRs with feedback — subagent prompt structure:**
+
+```
+You are a subagent working on the grimicorn/reader repository.
+
+Clone https://github.com/grimicorn/reader into /tmp/ as reader-<short-task-slug>/, then check out the existing branch for this PR.
+
+PR: <GitHub PR URL>
+Feedback to address: <summary of review comments>
+
+When complete:
+- Push the updated branch to GitHub (the existing PR will update automatically)
+- Delete the local clone directory
+- Report back with the PR URL
+```
+
+---
+
+## PR Conventions
+
+- **Branch naming:** `agent/<short-task-slug>` (e.g. `agent/rss-feed-support`)
+- **PR title:** Clear, imperative sentence (e.g. "Add RSS feed support")
+- **PR body must include:**
+  - What changed and why
+  - An explanation of any significant implementation decisions (e.g. why a particular package was chosen over rolling something custom)
+  - Any services, environment variables, or external setup required to use the change
+- **Target branch:** `main`
+- **One task per PR** — do not bundle unrelated changes
+- **Cap:** Never open a PR if there are already 10 open PRs — stop and report back instead
+
+---
+
+## Parallelism Rules
+
+Since all tasks are in the same repo, parallelism is based on file overlap:
+
+- Tasks that touch different files can run in parallel
+- Tasks that likely touch the same file must run sequentially
+- When in doubt, serialize
+
+---
+
+## Code Standards
+
+These cannot be enforced by the linter — subagents must follow them:
+
+- **No nesting:** Do not nest `if`, `for`, or similar blocks
+- **Full variable names:** Use `connection` not `c` — more time is spent reading code than writing it
+- **Rule of three:** If the same logic appears three times, abstract it into a reusable piece
+- **Isolate external services:** Any code that touches an external service (e.g. OAuth, APIs) must be abstracted so it can be tested in isolation
+- **Small functions:** Prefer multiple small functions over large blocks — code should read like sentences
+
+---
+
+## Linting
+
+- Run `npm run lint:fix` to auto-fix linting errors before committing
+- Fix anything remaining manually before pushing
+- Husky enforces linting on push; CI also runs linting
+
+---
+
+## Testing
+
+**Always include at least one of:**
+
+- **Unit tests** (vitest) for utilities, composables, and anything not in a `.vue` file
+- **Snapshot tests** (vitest) for pages, components, and anything in a `.vue` file
+
+**Optionally include:**
+
+- **E2E tests** (Playwright) for anything involving user interaction in the browser (e.g. authentication flows, search)
+
+---
+
+## Error Logging
+
+All errors — usage limit stops, unrecoverable subagent failures, and PR cap hits — must be logged to the Obsidian errors file:
+
+**File:** `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Reader Agent Errors.md`
+
+Append a new row **above the `^errorTable` block reference** in the Errors table. The table columns are `note` and `date`. Use the date format `Month Dth, YYYY` (e.g. `June 8th, 2026`).
+
+Example rows:
+
+```
+| Weekly usage above 85% — run skipped. Weekly: X% \| Session: Y% | June 8th, 2026 |
+| Session usage hit 85% — stopped early after 3 tasks. Weekly: X% \| Session: Y% | June 8th, 2026 |
+| PR cap hit — 10 open PRs, no new tasks started | June 8th, 2026 |
+| Task failed: <issue URL> — <brief reason> | June 8th, 2026 |
+```
+
+Escape any `|` characters inside cell values with `\|`.
+
+---
+
+## Reporting
+
+After all tasks are delegated and complete, summarize:
+
+- Tasks completed with PR URLs
+- Tasks blocked with questions — include the issue URL and what was asked in the comment
+- Tasks that encountered unrecoverable errors (and what they are)
+- Any tasks skipped and why (including if the 10-PR cap was hit)
+
+---
+
+## What You Must Not Do
+
+- Do not merge PRs — that is the human's job
+- Do not skip tasks without flagging them
+- Do not make assumptions about acceptance criteria — ask if unclear before delegating
+- Do not open a PR if there are already 10 open PRs — stop and report back
+- Do not leave local clone directories behind after a subagent finishes
