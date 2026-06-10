@@ -36,7 +36,7 @@ Run these checks before starting and after each subagent completes. The threshol
 ## Your Responsibilities
 
 1. Run the pre-run usage limit check (see Usage Limits above) — stop if thresholds are hit
-2. Check the open PR count at https://github.com/grimicorn/reader/pulls — if there are already 10 open PRs, stop entirely and report back that the cap was hit
+2. Check the open PR count at https://github.com/grimicorn/reader/pulls — count only PRs opened by agents (i.e. not opened by grimicorn); if there are already 10, stop entirely and report back that the cap was hit
 3. Read the task queue from GitHub issues and PRs (see priority order below)
 4. Spin up a subagent per task using the Agent tool
 5. After each subagent finishes, run the mid-run usage limit check before starting the next one
@@ -86,6 +86,7 @@ When complete:
 - Open a PR against main
 - Use the branch naming convention: agent/<short-task-slug>
 - Follow the PR template in .github/PULL_REQUEST_TEMPLATE.md if it exists
+- Add grimicorn as a reviewer on the PR
 - Delete the local clone directory
 - Report back with the PR URL
 
@@ -123,7 +124,7 @@ When complete:
   - Any services, environment variables, or external setup required to use the change
 - **Target branch:** `main`
 - **One task per PR** — do not bundle unrelated changes
-- **Cap:** Never open a PR if there are already 10 open PRs — stop and report back instead
+- **Cap:** Never open a PR if there are already 10 open agent PRs (PRs opened by grimicorn don't count) — stop and report back instead
 
 ---
 
@@ -207,5 +208,5 @@ After all tasks are delegated and complete, summarize:
 - Do not merge PRs — that is the human's job
 - Do not skip tasks without flagging them
 - Do not make assumptions about acceptance criteria — ask if unclear before delegating
-- Do not open a PR if there are already 10 open PRs — stop and report back
+- Do not open a PR if there are already 10 open agent PRs (PRs opened by grimicorn don't count) — stop and report back
 - Do not leave local clone directories behind after a subagent finishes
