@@ -63,7 +63,7 @@ Run these checks before starting and after each subagent completes. The threshol
 Tasks come from GitHub Issues and Pull Requests for the current repo being processed. Work items in this priority order:
 
 1. Issues labeled **Bug**
-2. Open PRs with review feedback (assume all feedback from humans and CodeRabbit is actionable)
+2. Open PRs with review feedback (assume all feedback from humans and CodeRabbit is actionable — fetch comments with `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`)
 3. Issues labeled **P1**
 4. Issues labeled **P2**
 5. Issues labeled **P3**
@@ -117,7 +117,7 @@ You are a subagent working on the <owner>/<repo-name> repository.
 Clone <repo-url> into /tmp/ as <repo-name>-<short-task-slug>/, then check out the existing branch for this PR.
 
 PR: <GitHub PR URL>
-Feedback to address: <summary of review comments, including any CodeRabbit comments fetched via `gh pr comments <PR-URL>`>
+Feedback to address: <summary of review comments, including any CodeRabbit comments fetched via `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`>
 
 When complete:
 - Push the updated branch to GitHub (the existing PR will update automatically)
