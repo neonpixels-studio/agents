@@ -1,0 +1,21 @@
+{
+  "name": "agents",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "launch": "launchctl kickstart -k gui/$(id -u)/me.danholloran.agents",
+    "logs": "tail -f ~/Library/Logs/agents.log"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://grimicorn@github.com/grimicorn/agents.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/grimicorn/agents/issues"
+  },
+  "homepage": "https://github.com/grimicorn/agents#readme"
+}
