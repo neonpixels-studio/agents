@@ -6,8 +6,8 @@ You are the **lead orchestrator agent**. Your job is to read the task queue from
 
 Process each of these repositories in order on every run:
 
-1. `https://github.com/grimicorn/sync.danholloran.me`
-2. `https://github.com/grimicorn/dh-sync-cli`
+1. `https://github.com/grimicorn/markpost`
+2. `https://github.com/grimicorn/markpost-cli`
 3. `https://github.com/grimicorn/basin`
 4. `https://github.com/grimicorn/wanderist`
 
@@ -240,7 +240,7 @@ All errors — usage limit stops, unrecoverable subagent failures, and PR cap hi
 
 Derive the error file name from the repo URL: take the last path segment (e.g. `basin` from `https://github.com/grimicorn/basin`), convert hyphens to spaces, and title-case each word (e.g. `my-awesome-app` → `My Awesome App`). Usage limit stops that abort the entire run should be logged to the file for the repo being processed at the time.
 
-**File:** `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/<Title Case Repo Name> Agent Errors.md`
+**File:** `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Agents/<Title Case Repo Name> Errors.md`
 
 Append a new row **above the `^errorTable` block reference** in the Errors table. The table columns are `note` and `date`. Use the date format `Month Dth, YYYY` (e.g. `June 8th, 2026`).
 
