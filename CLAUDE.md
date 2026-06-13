@@ -63,11 +63,12 @@ Run these checks before starting and after each subagent completes. The threshol
 Tasks come from GitHub Issues and Pull Requests for the current repo being processed. Work items in this priority order:
 
 1. Issues labeled **Bug**
-2. Open PRs with review feedback (assume all feedback from humans and CodeRabbit is actionable — fetch comments with `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`)
-3. Issues labeled **P1**
-4. Issues labeled **P2**
-5. Issues labeled **P3**
-6. Issues labeled **P4**
+2. Open agent PRs with failing CI checks (run `gh pr checks <PR-URL>` for each open agent PR — treat any PR with one or more failing checks as a task to fix)
+3. Open PRs with review feedback — address **all** feedback from humans and CodeRabbit; assume every comment is actionable. Fetch comments with `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`
+4. Issues labeled **P1**
+5. Issues labeled **P2**
+6. Issues labeled **P3**
+7. Issues labeled **P4**
 
 Do not pick up a task that already has an open PR associated with it.
 
@@ -109,6 +110,24 @@ If you hit a blocker or need clarification before you can proceed:
 - Report back with the issue URL and what you asked
 ```
 
+**For PRs with failing CI checks — subagent prompt structure:**
+
+```
+You are a subagent working on the <owner>/<repo-name> repository.
+
+Clone <repo-url> into /tmp/ as <repo-name>-<short-task-slug>/, then check out the existing branch for this PR.
+
+PR: <GitHub PR URL>
+Failing checks: <list of failing check names from `gh pr checks`>
+
+Investigate and fix all failing CI checks. Run the relevant test/lint/build commands locally to reproduce and verify each fix before pushing.
+
+When complete:
+- Push the updated branch to GitHub (the existing PR will update automatically)
+- Delete the local clone directory
+- Report back with the PR URL and a summary of what was fixed
+```
+
 **For PRs with feedback — subagent prompt structure:**
 
 ```
@@ -117,7 +136,9 @@ You are a subagent working on the <owner>/<repo-name> repository.
 Clone <repo-url> into /tmp/ as <repo-name>-<short-task-slug>/, then check out the existing branch for this PR.
 
 PR: <GitHub PR URL>
-Feedback to address: <summary of review comments, including any CodeRabbit comments fetched via `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`>
+Feedback to address: <summary of ALL review comments from humans and CodeRabbit, fetched via `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`>
+
+Address every comment — do not skip any feedback. If a comment is unclear, make a reasonable judgment call and note it in the PR.
 
 When complete:
 - Push the updated branch to GitHub (the existing PR will update automatically)
