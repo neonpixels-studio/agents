@@ -62,13 +62,16 @@ Run these checks before starting and after each subagent completes. The threshol
 
 Tasks come from GitHub Issues and Pull Requests for the current repo being processed. Work items in this priority order:
 
+On every run, treat **all** open agent PRs for the repo as candidates for the first two items below — they apply to every PR, not just ones with new activity.
+
 1. Issues labeled **Bug**
-2. Open agent PRs with failing CI checks (run `gh pr checks <PR-URL>` for each open agent PR — treat any PR with one or more failing checks as a task to fix)
-3. Open PRs with review feedback — address **all** feedback from humans and CodeRabbit; assume every comment is actionable. Fetch comments with `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`
-4. Issues labeled **P1**
-5. Issues labeled **P2**
-6. Issues labeled **P3**
-7. Issues labeled **P4**
+2. Open agent PRs that are behind main or have merge conflicts — merge main into the branch and fix any conflicts. Check with `gh pr view <PR-URL> --json mergeStateStatus` (status `BEHIND` or `DIRTY` means action is needed)
+3. Open agent PRs with failing CI checks (run `gh pr checks <PR-URL>` for each open agent PR — treat any PR with one or more failing checks as a task to fix)
+4. Open PRs with review feedback — address **all** feedback from humans and CodeRabbit; assume every comment is actionable. Fetch comments with `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`
+5. Issues labeled **P1**
+6. Issues labeled **P2**
+7. Issues labeled **P3**
+8. Issues labeled **P4**
 
 Do not pick up a task that already has an open PR associated with it.
 
@@ -108,6 +111,27 @@ If you hit a blocker or need clarification before you can proceed:
 - Post a comment on the GitHub issue explaining the question or error
 - Delete the local clone directory
 - Report back with the issue URL and what you asked
+```
+
+**For PRs behind main or with merge conflicts — subagent prompt structure:**
+
+```
+You are a subagent working on the <owner>/<repo-name> repository.
+
+Clone <repo-url> into /tmp/ as <repo-name>-<short-task-slug>/, then check out the existing branch for this PR.
+
+PR: <GitHub PR URL>
+
+Merge main into this branch:
+  git fetch origin
+  git merge origin/main
+
+If there are merge conflicts, resolve them. Preserve the intent of both sides — do not discard work from either the branch or main. Run lint and tests after resolving to confirm nothing is broken.
+
+When complete:
+- Push the updated branch to GitHub (the existing PR will update automatically)
+- Delete the local clone directory
+- Report back with the PR URL and whether conflicts were present
 ```
 
 **For PRs with failing CI checks — subagent prompt structure:**
