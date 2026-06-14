@@ -1,2 +1,4 @@
 /_scratch.md
 /.envrc
+.claude/*
+!.claude/agents/
