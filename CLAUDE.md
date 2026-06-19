@@ -85,9 +85,10 @@ Use the **Agent tool** to spawn a subagent for each task. Each subagent should:
 
 1. Clone the repo into `/tmp/` (use a slug-based name derived from the repo name, e.g. `<repo-name>-<short-task-slug>`)
 2. Do all work inside that clone
-3. Push the branch to GitHub
-4. Open a PR and report back with the PR URL
-5. Delete the local clone directory
+3. Run lint, tests, and CodeRabbit — fix all issues before pushing (see CodeRabbit section below)
+4. Push the branch to GitHub
+5. Open a PR and report back with the PR URL
+6. Delete the local clone directory
 
 **For issues — subagent prompt structure:**
 
@@ -201,6 +202,28 @@ When complete:
 
 ---
 
+## Retry Limit
+
+Subagents must not loop indefinitely. Each subagent gets **3 attempts** to reach a working state (tests passing, lint clean, CI green). An "attempt" is one cycle of: make a change → run verification (tests/lint/build) → evaluate result.
+
+If all 3 attempts fail:
+
+1. Add the `blocked` label to the PR or issue
+2. Assign it to `grimicorn`
+3. Post a comment explaining what was tried and why it failed
+4. Delete the local clone directory
+5. Report back with the URL and a summary of what blocked it
+
+The orchestrator must skip any PR or issue that already has the `blocked` label — do not spawn a subagent for it. A human will triage, remove the label when ready, and the next run will pick it up again.
+
+---
+
+## Design References in Issues
+
+When a GitHub issue includes a **Reference HTML** section (see `html-issue.md` for the template), subagents must treat the HTML as a visual and structural spec — not code to copy verbatim. Implement it using the project's existing components, composables, and conventions. Match the layout, spacing, and interaction intent from the HTML, but translate it into the patterns already in use in the codebase.
+
+---
+
 ## Code Standards
 
 These cannot be enforced by the linter — subagents must follow them:
@@ -212,6 +235,29 @@ These cannot be enforced by the linter — subagents must follow them:
 - **Small functions:** Prefer multiple small functions over large blocks — code should read like sentences
 - **Environment variables:** If you add new environment variables, add them to all sample env files (`.env.sample`, `.env.test.sample`, `.envrc.sample`, etc.) with a comment explaining what the value is and how to obtain it
 - **README updates:** If your change introduces a new external service or integration, update the README to document it
+
+---
+
+## CodeRabbit
+
+Before pushing any branch, subagents must run CodeRabbit locally and attempt to fix all surfaced issues:
+
+```bash
+coderabbit --prompt-only
+```
+
+Read the output, apply every suggested fix, then re-run. Repeat up to **3 attempts**. Each run-and-fix cycle is one attempt.
+
+If CodeRabbit is still reporting issues after 3 attempts, **do not block** — push the branch, open the PR, and add `grimicorn` as a reviewer. Include a section in the PR body listing the unresolved CodeRabbit issues so they can be cleaned up manually.
+
+In all cases, if any CodeRabbit suggestion was intentionally skipped (e.g. it conflicts with project conventions, is a false positive, or is out of scope for the task), note it in the same PR body section with a brief reason. The goal is full visibility into what CodeRabbit flagged and what was or wasn't done with it.
+
+If CodeRabbit is not installed, install it first:
+
+```bash
+curl -fsSL https://cli.coderabbit.ai/install.sh | sh
+coderabbit auth login
+```
 
 ---
 
@@ -233,6 +279,72 @@ These cannot be enforced by the linter — subagents must follow them:
 **Optionally include:**
 
 - **E2E tests** (Playwright) for anything involving user interaction in the browser (e.g. authentication flows, search)
+
+---
+
+## E2E Tests
+
+### Env file convention
+
+Per-repo env files live at:
+
+```
+/Volumes/External/Development/agents/envs/<repo-name>.env
+```
+
+Each file contains repo-specific variables **except** `E2E_DATABASE_URL`, which is generated fresh from a Neon branch per run. Every env file must include:
+
+- `NEON_PROJECT_ID` — the Neon project ID for this repo
+- Clerk auth keys and any other vars required by Playwright
+
+`markpost-cli` has no E2E tests or database — no env file needed.
+
+### Pre-run: check for E2E script
+
+Before attempting E2E tests, confirm the repo has an `e2e` npm script:
+
+```bash
+npm pkg get scripts.e2e
+```
+
+If the output is `{}` or empty, skip E2E entirely and continue without error.
+
+### Running E2E tests
+
+When the `e2e` script exists, follow these steps in order:
+
+**1. Copy the env file into the clone:**
+
+```bash
+cp /Volumes/External/Development/agents/envs/<repo-name>.env <clone-dir>/.env.test
+```
+
+**2. Create a Neon branch for this run:**
+
+```bash
+neon branches create --name "agent-<task-slug>" --project-id $NEON_PROJECT_ID
+```
+
+**3. Export `E2E_DATABASE_URL` from the branch connection string:**
+
+```bash
+export E2E_DATABASE_URL=$(neon connection-string --branch "agent-<task-slug>" --project-id $NEON_PROJECT_ID)
+```
+
+**4. Run E2E tests:**
+
+```bash
+npm run e2e
+```
+
+**5. Cleanup — always run, even if tests fail:**
+
+```bash
+neon branches delete "agent-<task-slug>" --project-id $NEON_PROJECT_ID --confirm
+rm <clone-dir>/.env.test
+```
+
+Never leave a Neon branch or `.env.test` file behind. Run the cleanup step in a `finally`-equivalent pattern (i.e. unconditionally after the test run, regardless of exit code).
 
 ---
 
