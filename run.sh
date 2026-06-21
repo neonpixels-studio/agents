@@ -4,7 +4,7 @@ LOG_DIR="$HOME/Library/Logs"
 LOG_FILE="$LOG_DIR/agents.log"
 ERR_FILE="$LOG_DIR/agents-error.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 
 python3 "$SCRIPT_DIR/trim_logs.py" "$LOG_FILE" "$ERR_FILE"
 

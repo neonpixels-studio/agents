@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "launch": "launchctl kickstart -k gui/$(id -u)/me.danholloran.agents",
+    "launch": "launchctl kickstart -k gui/$(id -u)/com.grimicorn.agents",
     "logs": "tail -f ~/Library/Logs/agents.log"
   },
   "repository": {
