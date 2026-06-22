@@ -107,6 +107,7 @@ When complete:
 - Open a PR against main
 - Use the branch naming convention: agent/<short-task-slug>
 - Follow the PR template in .github/PULL_REQUEST_TEMPLATE.md if it exists
+- Include `Closes #<issue-number>` in the PR body so merging auto-closes the issue
 - Add <repo-owner> as a reviewer on the PR
 - Delete the local clone directory
 - Report back with the PR URL
@@ -185,6 +186,7 @@ When complete:
   - An explanation of any significant implementation decisions (e.g. why a particular package was chosen over rolling something custom)
   - Any services, environment variables, or external setup required to use the change
   - Direct URL(s) to the page(s) in the app where the change can be viewed (e.g. the route or screen added or modified)
+  - `Closes #<issue-number>` referencing the issue the PR resolves, so merging the PR auto-closes the issue
 - **Target branch:** `main`
 - **One task per PR** — do not bundle unrelated changes
 - **Cap:** Never open a PR for a repo if that repo already has 10 open agent PRs (PRs opened by the repo owner don't count) — skip remaining tasks for that repo and move on to the next one
