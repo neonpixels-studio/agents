@@ -76,6 +76,8 @@ On every run, treat **all** open agent PRs for the repo as candidates for the fi
 
 Do not pick up a task that already has an open PR associated with it.
 
+Do not pick up any issue assigned to `grimicorn` — skip it and note it in the final report. These are reserved for human triage (e.g. blocked issues reassigned during retry handling).
+
 If an issue has a **Dependencies** section, check whether each listed issue is closed before picking up the task. If any dependency is still open, skip the issue and note it in the final report.
 
 ---
