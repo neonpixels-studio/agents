@@ -1,6 +1,4 @@
 /_scratch.md
 /.envrc
-.claude/*
-!.claude/agents/
 .DS_Store
 /envs/

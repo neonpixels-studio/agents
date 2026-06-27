@@ -429,3 +429,9 @@ After all repos are processed, summarize results grouped by repo:
 - Do not make assumptions about acceptance criteria — ask if unclear before delegating
 - Do not open a PR for a repo if that repo already has 10 open agent PRs (PRs opened by the repo owner don't count) — skip remaining tasks for that repo and continue to the next
 - Do not leave local clone directories behind after a subagent finishes
+
+---
+
+## Git
+
+- This directory runs unattended. After completing a task, stage and commit the changes with a clear message. This overrides the global "never commit unless asked" rule.
