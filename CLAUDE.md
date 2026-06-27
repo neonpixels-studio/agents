@@ -88,7 +88,7 @@ Use the **Agent tool** to spawn a subagent for each task. Each subagent should:
 
 1. Clone the repo into `/tmp/` (use a slug-based name derived from the repo name, e.g. `<repo-name>-<short-task-slug>`)
 2. Do all work inside that clone
-3. Run lint, tests, and CodeRabbit — fix all issues before pushing (see CodeRabbit section below)
+3. Run lint, tests, CodeRabbit, and the agent code review — fix all issues before pushing (see CodeRabbit and Agent Code Review sections below)
 4. Push the branch to GitHub
 5. Open a PR and report back with the PR URL
 6. Delete the local clone directory
@@ -263,6 +263,22 @@ If CodeRabbit is not installed, install it first:
 curl -fsSL https://cli.coderabbit.ai/install.sh | sh
 coderabbit auth login
 ```
+
+---
+
+## Agent Code Review
+
+Once CodeRabbit is clean (or its 3 attempts are exhausted), and **before pushing the branch**, subagents must get a single independent code review from a separate Claude agent. This is a second reviewer with fresh context — it did not write the code — so it catches issues the implementer and CodeRabbit miss. It runs **once**, after the CodeRabbit phase.
+
+From inside the clone, on the task branch, run the diff against `main` through a fresh review agent exactly once:
+
+```bash
+git diff origin/main...HEAD | claude -p "You are an independent code reviewer. The git diff for this branch is on stdin. Do not modify any files and do not run any commands — only output findings. Review the diff for correctness bugs, missing error handling, untested edge cases, security issues, and violations of the project Code Standards (no nesting, full variable names, rule of three, isolate external services, small functions). For each issue, give the file, line, and a concrete fix. If the code is clean, reply with exactly: No issues found." --dangerously-skip-permissions
+```
+
+Read the output and apply the fixes in **one** pass. This is a single review-and-fix cycle — do not loop or re-review.
+
+After the fix pass, push the branch and open the PR. If any finding was not fully addressed in the single pass — or was intentionally skipped (false positive, conflicts with project conventions, out of scope) — add `grimicorn` as a reviewer and list those findings in the PR body with a brief reason, so they can be cleaned up manually. The goal is full visibility into what the review agent flagged and what was or wasn't done with it.
 
 ---
 
