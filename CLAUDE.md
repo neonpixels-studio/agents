@@ -213,11 +213,13 @@ Subagents must not loop indefinitely. Each subagent gets **3 attempts** to reach
 
 If all 3 attempts fail:
 
-1. Add the `blocked` label to the PR or issue
-2. Assign it to `grimicorn`
-3. Post a comment explaining what was tried and why it failed
+1. Add the `blocked` label to the issue (and to the PR too, if one is open, so the orchestrator skips both)
+2. Assign the issue to `grimicorn`
+3. Post a comment on the issue stating what is needed to unblock it — the decision, information, or change required from the human — referencing the PR if one exists
 4. Delete the local clone directory
-5. Report back with the URL and a summary of what blocked it
+5. Report back with the issue URL (and the PR URL if there is one) and a summary of what blocked it
+
+If the task has no associated issue (e.g. a PR-only maintenance task), apply the same to the PR instead: add the `blocked` label, assign it to `grimicorn`, and post the unblock comment there.
 
 The orchestrator must skip any PR or issue that already has the `blocked` label — do not spawn a subagent for it. A human will triage, remove the label when ready, and the next run will pick it up again.
 
@@ -255,7 +257,15 @@ git diff origin/main...HEAD | claude -p "You are an independent code reviewer. T
 
 Each round: read the output, apply the fixes, then regenerate the diff and re-run the review on the updated branch. Repeat up to **3 rounds**. Stop early if a round returns exactly `No issues found`.
 
-After the loop ends, push the branch and open the PR. If any finding was still unresolved after 3 rounds — or was intentionally skipped (false positive, conflicts with project conventions, out of scope) — add `grimicorn` as a reviewer and list those findings in the PR body with a brief reason, so they can be cleaned up manually. The goal is full visibility into what the review agent flagged and what was or wasn't done with it.
+After the loop ends, push the branch and open the PR.
+
+**Post the review trail.** Once the PR is open, post the review history as a PR comment with `gh pr comment <PR-URL> --body "..."` so the human reviewer can see what the automated review caught and how it was handled — the review stays out of a black box. Always post it, even when the review came back clean. Structure it as:
+
+- **Per round:** what the reviewer flagged that round and what was done — fixed, or skipped with a one-line reason
+- **Unresolved:** anything still open after 3 rounds
+- **Skipped:** findings intentionally not actioned (false positive, conflicts with project conventions, out of scope), each with a brief reason
+
+Once the loop ends — whether the review came back clean or it ran the full 3 rounds — assign the PR to `grimicorn` with `gh pr edit <PR-URL> --add-assignee grimicorn`. That assignment is the "ready for your review" signal. The human stays the final arbiter — reviewing at a high level (does this read right, does the UI feel off) while the line-level code-quality back-and-forth is documented in the comment above.
 
 ---
 
