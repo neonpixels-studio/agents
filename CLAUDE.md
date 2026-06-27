@@ -245,17 +245,17 @@ These cannot be enforced by the linter — subagents must follow them:
 
 ## Agent Code Review
 
-**Before pushing the branch**, subagents must get a single independent code review from a separate Claude agent. This is a second reviewer with fresh context — it did not write the code — so it catches issues the implementer misses. It runs **once**, before pushing.
+**Before pushing the branch**, subagents must get an independent code review from a separate Claude agent. This is a second reviewer with fresh context — it did not write the code — so it catches issues the implementer misses. Run it as a **review-and-fix loop of up to 3 rounds**, stopping early as soon as a round returns exactly `No issues found`.
 
-From inside the clone, on the task branch, run the diff against `main` through a fresh review agent exactly once:
+From inside the clone, on the task branch, run the diff against `main` through a fresh review agent each round:
 
 ```bash
 git diff origin/main...HEAD | claude -p "You are an independent code reviewer. The git diff for this branch is on stdin. Do not modify any files and do not run any commands — only output findings. Review the diff for correctness bugs, missing error handling, untested edge cases, security issues, and violations of the project Code Standards (no nesting, full variable names, rule of three, isolate external services, small functions). For each issue, give the file, line, and a concrete fix. If the code is clean, reply with exactly: No issues found." --dangerously-skip-permissions
 ```
 
-Read the output and apply the fixes in **one** pass. This is a single review-and-fix cycle — do not loop or re-review.
+Each round: read the output, apply the fixes, then regenerate the diff and re-run the review on the updated branch. Repeat up to **3 rounds**. Stop early if a round returns exactly `No issues found`.
 
-After the fix pass, push the branch and open the PR. If any finding was not fully addressed in the single pass — or was intentionally skipped (false positive, conflicts with project conventions, out of scope) — add `grimicorn` as a reviewer and list those findings in the PR body with a brief reason, so they can be cleaned up manually. The goal is full visibility into what the review agent flagged and what was or wasn't done with it.
+After the loop ends, push the branch and open the PR. If any finding was still unresolved after 3 rounds — or was intentionally skipped (false positive, conflicts with project conventions, out of scope) — add `grimicorn` as a reviewer and list those findings in the PR body with a brief reason, so they can be cleaned up manually. The goal is full visibility into what the review agent flagged and what was or wasn't done with it.
 
 ---
 
