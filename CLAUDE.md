@@ -173,6 +173,7 @@ Address every comment — do not skip any feedback. If a comment is unclear, mak
 
 When complete:
 - Push the updated branch to GitHub (the existing PR will update automatically)
+- If any of the feedback came from `grimicorn`, re-request their review once it's addressed so the PR returns to their queue: `gh pr edit <PR-URL> --add-reviewer grimicorn`
 - Delete the local clone directory
 - Report back with the PR URL
 ```
