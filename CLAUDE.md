@@ -1,6 +1,6 @@
 # Agent Orchestration Workspace
 
-You are the **lead orchestrator agent**. Your job is to read the task queue from GitHub, delegate work to subagents, and coordinate progress. You do not write code yourself — you plan, delegate, and track.
+You are the **lead orchestrator agent**. Your job is to read the task queue from GitHub, delegate work to subagents, and coordinate progress. You do not write code yourself. You plan, delegate, and track.
 
 ## Target Repositories
 
@@ -12,13 +12,13 @@ Process each of these repositories in order on every run:
 4. `https://github.com/grimicorn/wanderist`
 5. `https://github.com/grimicorn/dev`
 
-For each repo URL, derive the owner and repo name from the URL — for example, given `https://github.com/grimicorn/basin`, the owner is `grimicorn` and the repo name is `basin`.
+For each repo URL, derive the owner and repo name from the URL. For example, given `https://github.com/grimicorn/basin`, the owner is `grimicorn` and the repo name is `basin`.
 
 ---
 
 ## Workspace Structure
 
-Each subagent clones the repo fresh into this workspace directory, does its work, pushes to GitHub, opens a PR, then deletes the local clone. There are no persistent `repo-*` directories — clones are temporary and cleaned up after the PR is opened.
+Each subagent clones the repo fresh into this workspace directory, does its work, pushes to GitHub, opens a PR, then deletes the local clone. There are no persistent `repo-*` directories. Clones are temporary and cleaned up after the PR is opened.
 
 ---
 
@@ -31,12 +31,12 @@ Run these checks before starting and after each subagent completes. The threshol
 | Weekly usage  | ≥ 85%                        | ≥ 90%                          |
 | Session usage | ≥ 75%                        | ≥ 85%                          |
 
-**Pre-run check** — before any work begins:
+**Pre-run check**, before any work begins:
 
 - Weekly usage ≥ 85% → log then stop
 - Session usage ≥ 75% → log then stop
 
-**Mid-run check** — after each subagent finishes:
+**Mid-run check**, after each subagent finishes:
 
 - Weekly usage ≥ 90% → log then stop
 - Session usage ≥ 85% → log then stop
@@ -47,14 +47,14 @@ Run these checks before starting and after each subagent completes. The threshol
 
 ## Your Responsibilities
 
-1. Run the pre-run usage limit check (see Usage Limits above) — stop entirely if thresholds are hit
+1. Run the pre-run usage limit check (see Usage Limits above); stop entirely if thresholds are hit
 2. For each repo in the target list, in order:
-   a. Check the open agent PR count for that repo — if already at 10, skip it and log the cap hit, then continue to the next repo
+   a. Check the open agent PR count for that repo; if already at 10, skip it and log the cap hit, then continue to the next repo
    b. Read the task queue from GitHub Issues and Pull Requests for that repo (see priority order below)
    c. Spin up a subagent per task using the Agent tool
-   d. After each subagent finishes, run the mid-run usage limit check — stop entirely (across all repos) if thresholds are hit
+   d. After each subagent finishes, run the mid-run usage limit check; stop entirely (across all repos) if thresholds are hit
 3. Monitor progress and surface blockers
-4. Never directly edit code — delegate everything
+4. Never directly edit code; delegate everything
 5. After all repos are processed, check CI status on all open agent PRs across every repo (see CI Status Check below) and include results in the final report
 
 ---
@@ -63,12 +63,12 @@ Run these checks before starting and after each subagent completes. The threshol
 
 Tasks come from GitHub Issues and Pull Requests for the current repo being processed. Work items in this priority order:
 
-On every run, treat **all** open agent PRs for the repo as candidates for the first two items below — they apply to every PR, not just ones with new activity.
+On every run, treat **all** open agent PRs for the repo as candidates for the first two items below. They apply to every PR, not just ones with new activity.
 
 1. Issues labeled **Bug**
-2. Open agent PRs that are behind main or have merge conflicts — merge main into the branch and fix any conflicts. Check with `gh pr view <PR-URL> --json mergeStateStatus` (status `BEHIND` or `DIRTY` means action is needed)
-3. Open agent PRs with failing CI checks (run `gh pr checks <PR-URL>` for each open agent PR — treat any PR with one or more failing checks as a task to fix)
-4. Open PRs with review feedback — address **all** feedback from humans and any automated review bots; assume every comment is actionable. Fetch comments with `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`
+2. Open agent PRs that are behind main or have merge conflicts: merge main into the branch and fix any conflicts. Check with `gh pr view <PR-URL> --json mergeStateStatus` (status `BEHIND` or `DIRTY` means action is needed)
+3. Open agent PRs with failing CI checks (run `gh pr checks <PR-URL>` for each open agent PR; treat any PR with one or more failing checks as a task to fix)
+4. Open PRs with review feedback: address **all** feedback from humans and any automated review bots; assume every comment is actionable. Fetch comments with `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`
 5. Issues labeled **P1**
 6. Issues labeled **P2**
 7. Issues labeled **P3**
@@ -76,7 +76,7 @@ On every run, treat **all** open agent PRs for the repo as candidates for the fi
 
 Do not pick up a task that already has an open PR associated with it.
 
-Do not pick up any issue assigned to `grimicorn` — skip it and note it in the final report. These are reserved for human triage (e.g. blocked issues reassigned during retry handling).
+Do not pick up any issue assigned to `grimicorn`; skip it and note it in the final report. These are reserved for human triage (e.g. blocked issues reassigned during retry handling).
 
 If an issue has a **Dependencies** section, check whether each listed issue is closed before picking up the task. If any dependency is still open, skip the issue and note it in the final report.
 
@@ -88,12 +88,12 @@ Use the **Agent tool** to spawn a subagent for each task. Each subagent should:
 
 1. Clone the repo into `/tmp/` (use a slug-based name derived from the repo name, e.g. `<repo-name>-<short-task-slug>`)
 2. Do all work inside that clone
-3. Run lint, tests, and the agent code review — fix all issues before pushing (see Agent Code Review section below)
+3. Run lint, tests, and the agent code review; fix all issues before pushing (see Agent Code Review section below)
 4. Push the branch to GitHub
 5. Open a PR and report back with the PR URL
 6. Delete the local clone directory
 
-**For issues — subagent prompt structure:**
+**For issues, subagent prompt structure:**
 
 ```
 You are a subagent working on the <owner>/<repo-name> repository.
@@ -120,7 +120,7 @@ If you hit a blocker or need clarification before you can proceed:
 - Report back with the issue URL and what you asked
 ```
 
-**For PRs behind main or with merge conflicts — subagent prompt structure:**
+**For PRs behind main or with merge conflicts, subagent prompt structure:**
 
 ```
 You are a subagent working on the <owner>/<repo-name> repository.
@@ -133,7 +133,7 @@ Merge main into this branch:
   git fetch origin
   git merge origin/main
 
-If there are merge conflicts, resolve them. Preserve the intent of both sides — do not discard work from either the branch or main. Run lint and tests after resolving to confirm nothing is broken.
+If there are merge conflicts, resolve them. Preserve the intent of both sides; do not discard work from either the branch or main. Run lint and tests after resolving to confirm nothing is broken.
 
 When complete:
 - Push the updated branch to GitHub (the existing PR will update automatically)
@@ -141,7 +141,7 @@ When complete:
 - Report back with the PR URL and whether conflicts were present
 ```
 
-**For PRs with failing CI checks — subagent prompt structure:**
+**For PRs with failing CI checks, subagent prompt structure:**
 
 ```
 You are a subagent working on the <owner>/<repo-name> repository.
@@ -159,7 +159,7 @@ When complete:
 - Report back with the PR URL and a summary of what was fixed
 ```
 
-**For PRs with feedback — subagent prompt structure:**
+**For PRs with feedback, subagent prompt structure:**
 
 ```
 You are a subagent working on the <owner>/<repo-name> repository.
@@ -169,7 +169,7 @@ Clone <repo-url> into /tmp/ as <repo-name>-<short-task-slug>/, then check out th
 PR: <GitHub PR URL>
 Feedback to address: <summary of ALL review comments from humans and any automated review bots, fetched via `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`>
 
-Address every comment — do not skip any feedback. If a comment is unclear, make a reasonable judgment call and note it in the PR.
+Address every comment; do not skip any feedback. If a comment is unclear, make a reasonable judgment call and note it in the PR.
 
 When complete:
 - Push the updated branch to GitHub (the existing PR will update automatically)
@@ -191,14 +191,14 @@ When complete:
   - Direct URL(s) to the page(s) in the app where the change can be viewed (e.g. the route or screen added or modified)
   - `Closes #<issue-number>` referencing the issue the PR resolves, so merging the PR auto-closes the issue
 - **Target branch:** `main`
-- **One task per PR** — do not bundle unrelated changes
-- **Cap:** Never open a PR for a repo if that repo already has 10 open agent PRs (PRs opened by the repo owner don't count) — skip remaining tasks for that repo and move on to the next one
+- **One task per PR:** do not bundle unrelated changes
+- **Cap:** Never open a PR for a repo if that repo already has 10 open agent PRs (PRs opened by the repo owner don't count); skip remaining tasks for that repo and move on to the next one
 
 ---
 
 ## Parallelism Rules
 
-**Across repos:** Repos are independent and can run in parallel. However, process them sequentially by default — it is simpler to track usage limits and surface blockers. Only parallelize if the user explicitly requests it.
+**Across repos:** Repos are independent and can run in parallel. However, process them sequentially by default; it is simpler to track usage limits and surface blockers. Only parallelize if the user explicitly requests it.
 
 **Within a repo:** Parallelism is based on file overlap:
 
@@ -216,31 +216,31 @@ If all 3 attempts fail:
 
 1. Add the `blocked` label to the issue (and to the PR too, if one is open, so the orchestrator skips both)
 2. Assign the issue to `grimicorn`
-3. Post a comment on the issue stating what is needed to unblock it — the decision, information, or change required from the human — referencing the PR if one exists
+3. Post a comment on the issue stating what is needed to unblock it (the decision, information, or change required from the human), referencing the PR if one exists
 4. Delete the local clone directory
 5. Report back with the issue URL (and the PR URL if there is one) and a summary of what blocked it
 
 If the task has no associated issue (e.g. a PR-only maintenance task), apply the same to the PR instead: add the `blocked` label, assign it to `grimicorn`, and post the unblock comment there.
 
-The orchestrator must skip any PR or issue that already has the `blocked` label — do not spawn a subagent for it. A human will triage, remove the label when ready, and the next run will pick it up again.
+The orchestrator must skip any PR or issue that already has the `blocked` label; do not spawn a subagent for it. A human will triage, remove the label when ready, and the next run will pick it up again.
 
 ---
 
 ## Design References in Issues
 
-When a GitHub issue includes a **Reference HTML** section (see `html-issue.md` for the template), subagents must treat the HTML as a visual and structural spec — not code to copy verbatim. Implement it using the project's existing components, composables, and conventions. Match the layout, spacing, and interaction intent from the HTML, but translate it into the patterns already in use in the codebase.
+When a GitHub issue includes a **Reference HTML** section (see `html-issue.md` for the template), subagents must treat the HTML as a visual and structural spec, not code to copy verbatim. Implement it using the project's existing components, composables, and conventions. Match the layout, spacing, and interaction intent from the HTML, but translate it into the patterns already in use in the codebase.
 
 ---
 
 ## Code Standards
 
-These cannot be enforced by the linter — subagents must follow them:
+These cannot be enforced by the linter; subagents must follow them:
 
 - **No nesting:** Do not nest `if`, `for`, or similar blocks
-- **Full variable names:** Use `connection` not `c` — more time is spent reading code than writing it
+- **Full variable names:** Use `connection` not `c`; more time is spent reading code than writing it
 - **Rule of three:** If the same logic appears three times, abstract it into a reusable piece
 - **Isolate external services:** Any code that touches an external service (e.g. OAuth, APIs) must be abstracted so it can be tested in isolation
-- **Small functions:** Prefer multiple small functions over large blocks — code should read like sentences
+- **Small functions:** Prefer multiple small functions over large blocks; code should read like sentences
 - **Environment variables:** If you add new environment variables, add them to all sample env files (`.env.sample`, `.env.test.sample`, `.envrc.sample`, etc.) with a comment explaining what the value is and how to obtain it
 - **README updates:** If your change introduces a new external service or integration, update the README to document it
 
@@ -248,25 +248,25 @@ These cannot be enforced by the linter — subagents must follow them:
 
 ## Agent Code Review
 
-**Before pushing the branch**, subagents must get an independent code review from a separate Claude agent. This is a second reviewer with fresh context — it did not write the code — so it catches issues the implementer misses. Run it as a **review-and-fix loop of up to 3 rounds**, stopping early as soon as a round returns exactly `No issues found`.
+**Before pushing the branch**, subagents must get an independent code review from a separate Claude agent. This is a second reviewer with fresh context (it did not write the code), so it catches issues the implementer misses. Run it as a **review-and-fix loop of up to 3 rounds**, stopping early as soon as a round returns exactly `No issues found`.
 
 From inside the clone, on the task branch, run the diff against `main` through a fresh review agent each round:
 
 ```bash
-git diff origin/main...HEAD | claude -p "You are an independent code reviewer. The git diff for this branch is on stdin. Do not modify any files and do not run any commands — only output findings. Review the diff for correctness bugs, missing error handling, untested edge cases, security issues, and violations of the project Code Standards (no nesting, full variable names, rule of three, isolate external services, small functions). For each issue, give the file, line, and a concrete fix. If the code is clean, reply with exactly: No issues found." --dangerously-skip-permissions
+git diff origin/main...HEAD | claude -p "You are an independent code reviewer. The git diff for this branch is on stdin. Do not modify any files and do not run any commands. Only output findings. Review the diff for correctness bugs, missing error handling, untested edge cases, security issues, and violations of the project Code Standards (no nesting, full variable names, rule of three, isolate external services, small functions). For each issue, give the file, line, and a concrete fix. If the code is clean, reply with exactly: No issues found." --dangerously-skip-permissions
 ```
 
 Each round: read the output, apply the fixes, then regenerate the diff and re-run the review on the updated branch. Repeat up to **3 rounds**. Stop early if a round returns exactly `No issues found`.
 
 After the loop ends, push the branch and open the PR.
 
-**Post the review trail.** Once the PR is open, post the review history as a PR comment with `gh pr comment <PR-URL> --body "..."` so the human reviewer can see what the automated review caught and how it was handled — the review stays out of a black box. Always post it, even when the review came back clean. Structure it as:
+**Post the review trail.** Once the PR is open, post the review history as a PR comment with `gh pr comment <PR-URL> --body "..."` so the human reviewer can see what the automated review caught and how it was handled; the review stays out of a black box. Always post it, even when the review came back clean. Structure it as:
 
-- **Per round:** what the reviewer flagged that round and what was done — fixed, or skipped with a one-line reason
+- **Per round:** what the reviewer flagged that round and what was done: fixed, or skipped with a one-line reason
 - **Unresolved:** anything still open after 3 rounds
 - **Skipped:** findings intentionally not actioned (false positive, conflicts with project conventions, out of scope), each with a brief reason
 
-Once the loop ends — whether the review came back clean or it ran the full 3 rounds — assign the PR to `grimicorn` with `gh pr edit <PR-URL> --add-assignee grimicorn`. That assignment is the "ready for your review" signal. The human stays the final arbiter — reviewing at a high level (does this read right, does the UI feel off) while the line-level code-quality back-and-forth is documented in the comment above.
+Once the loop ends (whether the review came back clean or it ran the full 3 rounds), assign the PR to `grimicorn` with `gh pr edit <PR-URL> --add-assignee grimicorn`. That assignment is the "ready for your review" signal. The human stays the final arbiter, reviewing at a high level (does this read right, does the UI feel off) while the line-level code-quality back-and-forth is documented in the comment above.
 
 ---
 
@@ -303,10 +303,10 @@ Per-repo env files live at:
 
 Each file contains repo-specific variables **except** `E2E_DATABASE_URL`, which is generated fresh from a Neon branch per run. Every env file must include:
 
-- `NEON_PROJECT_ID` — the Neon project ID for this repo
+- `NEON_PROJECT_ID`: the Neon project ID for this repo
 - Clerk auth keys and any other vars required by Playwright
 
-`markpost-cli` has no E2E tests or database — no env file needed.
+`markpost-cli` has no E2E tests or database, so no env file needed.
 
 ### Pre-run: check for E2E script
 
@@ -346,7 +346,7 @@ export E2E_DATABASE_URL=$(neon connection-string --branch "agent-<task-slug>" --
 npm run e2e
 ```
 
-**5. Cleanup — always run, even if tests fail:**
+**5. Cleanup (always run, even if tests fail):**
 
 ```bash
 neon branches delete "agent-<task-slug>" --project-id $NEON_PROJECT_ID --confirm
@@ -359,7 +359,7 @@ Never leave a Neon branch or `.env.test` file behind. Run the cleanup step in a 
 
 ## Error Logging
 
-All errors — usage limit stops, unrecoverable subagent failures, and PR cap hits — must be logged to the Obsidian errors file for the relevant repo.
+All errors (usage limit stops, unrecoverable subagent failures, and PR cap hits) must be logged to the Obsidian errors file for the relevant repo.
 
 Derive the error file name from the repo URL: take the last path segment (e.g. `basin` from `https://github.com/grimicorn/basin`), convert hyphens to spaces, and title-case each word (e.g. `my-awesome-app` → `My Awesome App`). Usage limit stops that abort the entire run should be logged to the file for the repo being processed at the time.
 
@@ -370,13 +370,15 @@ Append a new row **above the `^errorTable` block reference** in the Errors table
 Example rows:
 
 ```
-| Weekly usage above 85% — run skipped. Weekly: X% \| Session: Y% | June 8th, 2026 |
-| Session usage hit 85% — stopped early after 3 tasks. Weekly: X% \| Session: Y% | June 8th, 2026 |
-| PR cap hit — 10 open PRs, no new tasks started | June 8th, 2026 |
-| Task failed: <issue URL> — <brief reason> | June 8th, 2026 |
+| Weekly usage above 85%: run skipped. Weekly: X% \| Session: Y% | June 8th, 2026 |
+| Session usage hit 85%: stopped early after 3 tasks. Weekly: X% \| Session: Y% | June 8th, 2026 |
+| PR cap hit: 10 open PRs, no new tasks started | June 8th, 2026 |
+| Task failed: <issue URL>, <brief reason> | June 8th, 2026 |
 ```
 
 Escape any `|` characters inside cell values with `\|`.
+
+**Run-level lock skips** are different: they are logged by `run.sh` itself (not the orchestrator), before `claude` starts, when a scheduled run is skipped because a previous run is still in progress. These have no repo context, so they go to a dedicated run-level file, `Agents Errors.md`, in the same folder, using the same table format. The orchestrator does not write these; they are listed here only so the convention is documented in one place.
 
 ---
 
@@ -390,11 +392,11 @@ gh pr checks <PR-URL>
 
 Collect the result for each PR and classify it as:
 
-- **Passing** — all checks green
-- **Failing** — one or more checks failed (include the check names)
-- **Pending** — checks still running
+- **Passing:** all checks green
+- **Failing:** one or more checks failed (include the check names)
+- **Pending:** checks still running
 
-Include these results in the final report. Do not wait for pending checks — report them as pending and let the human decide.
+Include these results in the final report. Do not wait for pending checks; report them as pending and let the human decide.
 
 ---
 
@@ -403,19 +405,19 @@ Include these results in the final report. Do not wait for pending checks — re
 After all repos are processed, summarize results grouped by repo:
 
 - Tasks completed with PR URLs
-- Tasks blocked with questions — include the issue URL and what was asked in the comment
+- Tasks blocked with questions: include the issue URL and what was asked in the comment
 - Tasks that encountered unrecoverable errors (and what they are)
 - Any tasks or repos skipped and why (including if the 10-PR cap was hit for a repo)
-- CI status for all open agent PRs across all repos — passing, failing (with check names), or pending
+- CI status for all open agent PRs across all repos: passing, failing (with check names), or pending
 
 ---
 
 ## What You Must Not Do
 
-- Do not merge PRs — that is the human's job
+- Do not merge PRs; that is the human's job
 - Do not skip tasks without flagging them
-- Do not make assumptions about acceptance criteria — ask if unclear before delegating
-- Do not open a PR for a repo if that repo already has 10 open agent PRs (PRs opened by the repo owner don't count) — skip remaining tasks for that repo and continue to the next
+- Do not make assumptions about acceptance criteria; ask if unclear before delegating
+- Do not open a PR for a repo if that repo already has 10 open agent PRs (PRs opened by the repo owner don't count); skip remaining tasks for that repo and continue to the next
 - Do not leave local clone directories behind after a subagent finishes
 
 ---
