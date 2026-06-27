@@ -68,7 +68,7 @@ On every run, treat **all** open agent PRs for the repo as candidates for the fi
 1. Issues labeled **Bug**
 2. Open agent PRs that are behind main or have merge conflicts — merge main into the branch and fix any conflicts. Check with `gh pr view <PR-URL> --json mergeStateStatus` (status `BEHIND` or `DIRTY` means action is needed)
 3. Open agent PRs with failing CI checks (run `gh pr checks <PR-URL>` for each open agent PR — treat any PR with one or more failing checks as a task to fix)
-4. Open PRs with review feedback — address **all** feedback from humans and CodeRabbit; assume every comment is actionable. Fetch comments with `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`
+4. Open PRs with review feedback — address **all** feedback from humans and any automated review bots; assume every comment is actionable. Fetch comments with `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`
 5. Issues labeled **P1**
 6. Issues labeled **P2**
 7. Issues labeled **P3**
@@ -88,7 +88,7 @@ Use the **Agent tool** to spawn a subagent for each task. Each subagent should:
 
 1. Clone the repo into `/tmp/` (use a slug-based name derived from the repo name, e.g. `<repo-name>-<short-task-slug>`)
 2. Do all work inside that clone
-3. Run lint, tests, CodeRabbit, and the agent code review — fix all issues before pushing (see CodeRabbit and Agent Code Review sections below)
+3. Run lint, tests, and the agent code review — fix all issues before pushing (see Agent Code Review section below)
 4. Push the branch to GitHub
 5. Open a PR and report back with the PR URL
 6. Delete the local clone directory
@@ -167,7 +167,7 @@ You are a subagent working on the <owner>/<repo-name> repository.
 Clone <repo-url> into /tmp/ as <repo-name>-<short-task-slug>/, then check out the existing branch for this PR.
 
 PR: <GitHub PR URL>
-Feedback to address: <summary of ALL review comments from humans and CodeRabbit, fetched via `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`>
+Feedback to address: <summary of ALL review comments from humans and any automated review bots, fetched via `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`>
 
 Address every comment — do not skip any feedback. If a comment is unclear, make a reasonable judgment call and note it in the PR.
 
@@ -243,32 +243,9 @@ These cannot be enforced by the linter — subagents must follow them:
 
 ---
 
-## CodeRabbit
-
-Before pushing any branch, subagents must run CodeRabbit locally and attempt to fix all surfaced issues:
-
-```bash
-coderabbit --prompt-only
-```
-
-Read the output, apply every suggested fix, then re-run. Repeat up to **3 attempts**. Each run-and-fix cycle is one attempt.
-
-If CodeRabbit is still reporting issues after 3 attempts, **do not block** — push the branch, open the PR, and add `grimicorn` as a reviewer. Include a section in the PR body listing the unresolved CodeRabbit issues so they can be cleaned up manually.
-
-In all cases, if any CodeRabbit suggestion was intentionally skipped (e.g. it conflicts with project conventions, is a false positive, or is out of scope for the task), note it in the same PR body section with a brief reason. The goal is full visibility into what CodeRabbit flagged and what was or wasn't done with it.
-
-If CodeRabbit is not installed, install it first:
-
-```bash
-curl -fsSL https://cli.coderabbit.ai/install.sh | sh
-coderabbit auth login
-```
-
----
-
 ## Agent Code Review
 
-Once CodeRabbit is clean (or its 3 attempts are exhausted), and **before pushing the branch**, subagents must get a single independent code review from a separate Claude agent. This is a second reviewer with fresh context — it did not write the code — so it catches issues the implementer and CodeRabbit miss. It runs **once**, after the CodeRabbit phase.
+**Before pushing the branch**, subagents must get a single independent code review from a separate Claude agent. This is a second reviewer with fresh context — it did not write the code — so it catches issues the implementer misses. It runs **once**, before pushing.
 
 From inside the clone, on the task branch, run the diff against `main` through a fresh review agent exactly once:
 
