@@ -84,7 +84,9 @@ If an issue has a **Dependencies** section, check whether each listed issue is c
 
 ## Spinning Up Subagents
 
-Use the **Agent tool** to spawn a subagent for each task. Each subagent should:
+Use the **Agent tool** to spawn a subagent for each task. Spawn every worker subagent with the Sonnet model by passing `model: "sonnet"` to the Agent tool. The worker writes the code on Sonnet while you, the orchestrator, stay on Opus for planning, delegation, and tracking. The independent code reviewer also stays on Opus (see Agent Code Review below), so the cheaper model writes and the stronger model checks.
+
+Each subagent should:
 
 1. Clone the repo into `/tmp/` (use a slug-based name derived from the repo name, e.g. `<repo-name>-<short-task-slug>`)
 2. Do all work inside that clone
@@ -250,10 +252,10 @@ These cannot be enforced by the linter; subagents must follow them:
 
 **Before pushing the branch**, subagents must get an independent code review from a separate Claude agent. This is a second reviewer with fresh context (it did not write the code), so it catches issues the implementer misses. Run it as a **review-and-fix loop of up to 3 rounds**, stopping early as soon as a round returns exactly `No issues found`.
 
-From inside the clone, on the task branch, run the diff against `main` through a fresh review agent each round:
+From inside the clone, on the task branch, run the diff against `main` through a fresh review agent each round. The reviewer runs on Opus via `--model opus` so the stronger model checks the Sonnet-written code; keep this flag even though the worker that invokes it is on Sonnet:
 
 ```bash
-git diff origin/main...HEAD | claude -p "You are an independent code reviewer. The git diff for this branch is on stdin. Do not modify any files and do not run any commands. Only output findings. Review the diff for correctness bugs, missing error handling, untested edge cases, security issues, and violations of the project Code Standards (no nesting, full variable names, rule of three, isolate external services, small functions). For each issue, give the file, line, and a concrete fix. If the code is clean, reply with exactly: No issues found." --dangerously-skip-permissions
+git diff origin/main...HEAD | claude --model opus -p "You are an independent code reviewer. The git diff for this branch is on stdin. Do not modify any files and do not run any commands. Only output findings. Review the diff for correctness bugs, missing error handling, untested edge cases, security issues, and violations of the project Code Standards (no nesting, full variable names, rule of three, isolate external services, small functions). For each issue, give the file, line, and a concrete fix. If the code is clean, reply with exactly: No issues found." --dangerously-skip-permissions
 ```
 
 Each round: read the output, apply the fixes, then regenerate the diff and re-run the review on the updated branch. Repeat up to **3 rounds**. Stop early if a round returns exactly `No issues found`.
