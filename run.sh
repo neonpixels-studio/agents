@@ -72,6 +72,17 @@ echo "=== Run started: $TIMESTAMP ===" >> "$LOG_FILE"
 echo "" >> "$ERR_FILE"
 echo "=== Run started: $TIMESTAMP ===" >> "$ERR_FILE"
 
+# Headless `claude -p` runs subagents in the background and terminates them
+# once the background-wait ceiling is hit (default 600000ms = 10 min). A clone +
+# tests + e2e + 3-round review + push + PR takes far longer than 10 min, so the
+# worker was being killed before it could open the PR. Raise the ceiling to 90
+# min: well above the slowest task, but ~30 min under the 2-hour run cadence so a
+# wedged run self-terminates before the next scheduled run and never holds the
+# lock across slots. Both names are set to cover Claude Code's env-var naming
+# drift; an unrecognized var is harmless.
+export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=5400000
+export CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS=5400000
+
 direnv exec "$SCRIPT_DIR" claude \
     -p "Process Github issues and delegate to subagents" \
     --dangerously-skip-permissions \
