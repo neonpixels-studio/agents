@@ -361,26 +361,24 @@ Never leave a Neon branch or `.env.test` file behind. Run the cleanup step in a 
 
 ## Error Logging
 
-All errors (usage limit stops, unrecoverable subagent failures, and PR cap hits) must be logged to the Obsidian errors file for the relevant repo.
+All errors (usage limit stops, unrecoverable subagent failures, and PR cap hits) must be logged to a single consolidated Obsidian errors file, regardless of which repo they came from.
 
-Derive the error file name from the repo URL: take the last path segment (e.g. `basin` from `https://github.com/grimicorn/basin`), convert hyphens to spaces, and title-case each word (e.g. `my-awesome-app` → `My Awesome App`). Usage limit stops that abort the entire run should be logged to the file for the repo being processed at the time.
+**File:** `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Agent Errors.md`
 
-**File:** `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Agents/<Title Case Repo Name> Errors.md`
-
-Append a new row **above the `^errorTable` block reference** in the Errors table. The table columns are `note` and `date`. Use the date format `Month Dth, YYYY` (e.g. `June 8th, 2026`).
+Append a new row **above the `^errorTable` block reference** in the Errors table. The table columns are `note`, `date`, and `repo`. Use the date format `Month Dth, YYYY` (e.g. `June 8th, 2026`). For the `repo` column, use the repo name (the last path segment of the repo URL, e.g. `basin` from `https://github.com/grimicorn/basin`); use `all` when the error is not tied to a single repo (an environment-wide failure). A usage limit stop that aborts the entire run is logged against the repo being processed at the time.
 
 Example rows:
 
 ```
-| Weekly usage above 85%: run skipped. Weekly: X% \| Session: Y% | June 8th, 2026 |
-| Session usage hit 85%: stopped early after 3 tasks. Weekly: X% \| Session: Y% | June 8th, 2026 |
-| PR cap hit: 10 open PRs, no new tasks started | June 8th, 2026 |
-| Task failed: <issue URL>, <brief reason> | June 8th, 2026 |
+| Weekly usage above 85%: run skipped. Weekly: X% \| Session: Y% | June 8th, 2026 | all |
+| Session usage hit 85%: stopped early after 3 tasks. Weekly: X% \| Session: Y% | June 8th, 2026 | markpost |
+| PR cap hit: 10 open PRs, no new tasks started | June 8th, 2026 | basin |
+| Task failed: <issue URL>, <brief reason> | June 8th, 2026 | wanderist |
 ```
 
 Escape any `|` characters inside cell values with `\|`.
 
-**Run-level lock skips** are different: they are logged by `run.sh` itself (not the orchestrator), before `claude` starts, when a scheduled run is skipped because a previous run is still in progress. These have no repo context, so they go to a dedicated run-level file, `Agents Errors.md`, in the same folder, using the same table format. The orchestrator does not write these; they are listed here only so the convention is documented in one place.
+**Run-level errors are logged by `run.sh` itself** (not the orchestrator), to the same file with `repo` set to `all`. These are: a scheduled run skipped because a previous run is still in progress (lock contention), a run terminated early because a background subagent was killed at the wait ceiling, and any abnormal (non-zero) exit of the headless `claude` process. The orchestrator does not write these; they are listed here only so the convention is documented in one place.
 
 ---
 

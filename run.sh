@@ -6,7 +6,7 @@ ERR_FILE="$LOG_DIR/agents-error.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 LOCK_DIR="$LOG_DIR/.agents-run.lock"
-OBSIDIAN_ERR_FILE="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Agents/Agents Errors.md"
+OBSIDIAN_ERR_FILE="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Agent Errors.md"
 
 ordinal_date() {
     local day month year suffix
@@ -22,15 +22,16 @@ ordinal_date() {
     printf '%s %s%s, %s' "$month" "$day" "$suffix" "$year"
 }
 
-log_skip_to_obsidian() {
+log_error_to_obsidian() {
     local note="$1"
+    local repo="${2:-all}"
     local datestr row tmp
     datestr=$(ordinal_date)
-    row="| ${note} | ${datestr} |"
+    row="| ${note} | ${datestr} | ${repo} |"
 
     if [ ! -f "$OBSIDIAN_ERR_FILE" ]; then
         mkdir -p "$(dirname "$OBSIDIAN_ERR_FILE")"
-        printf -- '---\ncollection: Code Agents\n---\n\n## Errors\n\n| note | date |\n| ---- | ---- |\n^errorTable\n' > "$OBSIDIAN_ERR_FILE"
+        printf -- '## Errors\n\n| note | date | repo |\n| ---- | ---- | ---- |\n^errorTable\n' > "$OBSIDIAN_ERR_FILE"
     fi
 
     tmp=$(mktemp)
@@ -50,7 +51,7 @@ acquire_lock_or_exit() {
     lock_pid=$(cat "$LOCK_DIR/pid" 2>/dev/null)
     if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null && ps -p "$lock_pid" -o command= 2>/dev/null | grep -q "run.sh"; then
         echo "=== Run skipped: previous run (PID $lock_pid) still active ($TIMESTAMP) ===" >> "$LOG_FILE"
-        log_skip_to_obsidian "Run skipped: previous run (PID $lock_pid) still active"
+        log_error_to_obsidian "Run skipped: previous run (PID $lock_pid) still active" "all"
         exit 0
     fi
 
@@ -59,7 +60,7 @@ acquire_lock_or_exit() {
     take_lock && return
 
     echo "=== Run skipped: could not acquire lock ($TIMESTAMP) ===" >> "$LOG_FILE"
-    log_skip_to_obsidian "Run skipped: could not acquire lock"
+    log_error_to_obsidian "Run skipped: could not acquire lock" "all"
     exit 0
 }
 
@@ -83,12 +84,30 @@ echo "=== Run started: $TIMESTAMP ===" >> "$ERR_FILE"
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=5400000
 export CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS=5400000
 
+# Capture this run's stderr to a temp file so we can inspect it for run-level
+# errors, while still appending it to the rolling error log as before.
+RUN_ERR_FILE=$(mktemp)
+
 direnv exec "$SCRIPT_DIR" claude \
     -p "Process Github issues and delegate to subagents" \
     --dangerously-skip-permissions \
     --output-format stream-json \
     --verbose \
-    >> "$LOG_FILE" 2>> "$ERR_FILE"
+    >> "$LOG_FILE" 2> "$RUN_ERR_FILE"
 
 EXIT_CODE=$?
+cat "$RUN_ERR_FILE" >> "$ERR_FILE"
 echo "=== Run ended: $(date '+%Y-%m-%d %H:%M:%S') (exit: $EXIT_CODE) ===" >> "$LOG_FILE"
+
+# Surface run-level failures to the consolidated Obsidian error log (repo "all"
+# since these are environment-wide, not tied to one repo). The background-task
+# termination still exits 0, so it must be detected by message, not exit code.
+if grep -q "Background tasks still running" "$RUN_ERR_FILE"; then
+    log_error_to_obsidian "Run terminated early: a background subagent was killed at the wait ceiling before finishing, so its PR was likely never opened. Raise CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS if this recurs." "all"
+fi
+
+if [ "$EXIT_CODE" -ne 0 ]; then
+    log_error_to_obsidian "Run exited abnormally (exit code $EXIT_CODE); see agents-error.log for details." "all"
+fi
+
+rm -f "$RUN_ERR_FILE"
