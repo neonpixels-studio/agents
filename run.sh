@@ -34,12 +34,11 @@ log_error_to_obsidian() {
         printf -- '\n| date | source | item | note |\n| ---- | ------ | ---- | ---- |\n' > "$OBSIDIAN_ERR_FILE"
     fi
 
-    tmp=$(mktemp)
-    awk -v row="$row" '
-        { print }
-        header && /^\| *-/ { print row; header=0 }
-        /\| *date *\| *source *\| *item *\| *note *\|/ { header=1 }
-    ' "$OBSIDIAN_ERR_FILE" > "$tmp" && mv "$tmp" "$OBSIDIAN_ERR_FILE"
+    # Append at the end of the table so ordering stays consistent with the
+    # skill router, which also appends. Ensure a trailing newline first so the
+    # new row never joins the last existing line.
+    [ -n "$(tail -c1 "$OBSIDIAN_ERR_FILE")" ] && printf '\n' >> "$OBSIDIAN_ERR_FILE"
+    printf '%s\n' "$row" >> "$OBSIDIAN_ERR_FILE"
 }
 
 take_lock() {

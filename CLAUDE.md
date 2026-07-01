@@ -365,7 +365,7 @@ All errors (usage limit stops, unrecoverable subagent failures, and PR cap hits)
 
 **File:** `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Errors.md`
 
-This is a shared errors file used by more than one system, so every row carries a `source` column identifying who wrote it. Append a new row directly **beneath the header separator row** (the `| ---- | ------ | ---- | ---- |` line) so the newest error sits at the top of the table. The columns, in order, are `date`, `source`, `item`, and `note`:
+This is a shared errors file used by more than one system (the skill router also writes to it), so every row carries a `source` column identifying who wrote it. **Append** a new row at the **bottom of the table** so ordering stays consistent with the router, which also appends. The columns, in order, are `date`, `source`, `item`, and `note`:
 
 - **date:** the date format `Month Dth, YYYY` (e.g. `June 8th, 2026`)
 - **source:** always `agents` for rows written by this orchestrator
