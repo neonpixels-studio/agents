@@ -6,7 +6,7 @@ ERR_FILE="$LOG_DIR/agents-error.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 LOCK_DIR="$LOG_DIR/.agents-run.lock"
-OBSIDIAN_ERR_FILE="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Agent Errors.md"
+OBSIDIAN_ERR_FILE="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Errors.md"
 
 ordinal_date() {
     local day month year suffix
@@ -27,15 +27,19 @@ log_error_to_obsidian() {
     local repo="${2:-all}"
     local datestr row tmp
     datestr=$(ordinal_date)
-    row="| ${note} | ${datestr} | ${repo} |"
+    row="| ${datestr} | agents | ${repo} | ${note} |"
 
     if [ ! -f "$OBSIDIAN_ERR_FILE" ]; then
         mkdir -p "$(dirname "$OBSIDIAN_ERR_FILE")"
-        printf -- '## Errors\n\n| note | date | repo |\n| ---- | ---- | ---- |\n^errorTable\n' > "$OBSIDIAN_ERR_FILE"
+        printf -- '\n| date | source | item | note |\n| ---- | ------ | ---- | ---- |\n' > "$OBSIDIAN_ERR_FILE"
     fi
 
     tmp=$(mktemp)
-    awk -v row="$row" 'index($0,"^errorTable")==1 { print row } { print }' "$OBSIDIAN_ERR_FILE" > "$tmp" && mv "$tmp" "$OBSIDIAN_ERR_FILE"
+    awk -v row="$row" '
+        { print }
+        header && /^\| *-/ { print row; header=0 }
+        /\| *date *\| *source *\| *item *\| *note *\|/ { header=1 }
+    ' "$OBSIDIAN_ERR_FILE" > "$tmp" && mv "$tmp" "$OBSIDIAN_ERR_FILE"
 }
 
 take_lock() {
