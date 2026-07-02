@@ -175,7 +175,7 @@ Address every comment; do not skip any feedback. If a comment is unclear, make a
 
 When complete:
 - Push the updated branch to GitHub (the existing PR will update automatically)
-- If any of the feedback came from `grimicorn`, re-request their review once it's addressed so the PR returns to their queue: `gh pr edit <PR-URL> --add-reviewer grimicorn`
+- If any of the feedback came from `grimicorn`, re-request their review once it's addressed so the PR returns to their queue (use REST, since `gh pr edit --add-reviewer` fails on the agent token's missing `read:org` scope): `gh api -X POST repos/<owner>/<repo>/pulls/<PR-NUMBER>/requested_reviewers -f "reviewers[]=grimicorn"`
 - Delete the local clone directory
 - Report back with the PR URL
 ```
@@ -268,7 +268,13 @@ After the loop ends, push the branch and open the PR.
 - **Unresolved:** anything still open after 3 rounds
 - **Skipped:** findings intentionally not actioned (false positive, conflicts with project conventions, out of scope), each with a brief reason
 
-Once the loop ends (whether the review came back clean or it ran the full 3 rounds), assign the PR to `grimicorn` with `gh pr edit <PR-URL> --add-assignee grimicorn`. That assignment is the "ready for your review" signal. The human stays the final arbiter, reviewing at a high level (does this read right, does the UI feel off) while the line-level code-quality back-and-forth is documented in the comment above.
+Once the loop ends (whether the review came back clean or it ran the full 3 rounds), request review from `grimicorn` so the PR lands in their review queue. Use the REST API with the agent token, because `gh pr edit --add-reviewer` fails on the agent token's missing `read:org` scope:
+
+```bash
+gh api -X POST repos/<owner>/<repo>/pulls/<PR-NUMBER>/requested_reviewers -f "reviewers[]=grimicorn"
+```
+
+That review request is the "ready for your review" signal. The human stays the final arbiter, reviewing at a high level (does this read right, does the UI feel off) while the line-level code-quality back-and-forth is documented in the comment above.
 
 ---
 
