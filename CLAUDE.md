@@ -95,6 +95,8 @@ Each subagent should:
 5. Open a PR and report back with the PR URL
 6. Delete the local clone directory
 
+**Subagents must never write to the Obsidian vault** (anything under `~/Library/Mobile Documents/iCloud~md~obsidian/`), including any error or log file. Error logging is the orchestrator's and `run.sh`'s job only, and it goes to the single consolidated `Errors.md` (see Error Logging below). A worker that hits a blocker surfaces it the way the prompt templates and Retry Limit section already specify: post a GitHub comment and report back to the orchestrator. Do not create a per-repo error file or record the blocker in the vault yourself.
+
 **For issues, subagent prompt structure:**
 
 ```
@@ -367,7 +369,7 @@ Never leave a Neon branch or `.env.test` file behind. Run the cleanup step in a 
 
 ## Error Logging
 
-All errors (usage limit stops, unrecoverable subagent failures, and PR cap hits) must be logged to a single consolidated Obsidian errors file, regardless of which repo they came from.
+All errors (usage limit stops, unrecoverable subagent failures, and PR cap hits) must be logged to a single consolidated Obsidian errors file, regardless of which repo they came from. **Only the orchestrator and `run.sh` write to this file** — subagents never touch the vault (see Spinning Up Subagents). There is exactly one error file; never create a per-repo error file.
 
 **File:** `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Errors.md`
 
