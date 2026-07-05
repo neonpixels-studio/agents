@@ -305,18 +305,35 @@ That review request is the "ready for your review" signal. The human stays the f
 
 ### Env file convention
 
-Per-repo env files live at:
+Per-repo secrets live in `/Volumes/External/Development/agents/envs/`. There are two styles, and a repo uses exactly one:
+
+**dotenvx repos** (e.g. `basin`) — secrets are committed to the repo as encrypted `.env` / `.env.e2e` files. This workspace holds only the decrypt keys:
+
+```
+/Volumes/External/Development/agents/envs/<repo-name>.keys
+```
+
+The `.keys` file contains only the private keys this box needs (local + e2e); never the production or Netlify preview keys, since this box never deploys:
+
+- `DOTENV_PRIVATE_KEY`: decrypts `.env` (local)
+- `DOTENV_PRIVATE_KEY_E2E`: decrypts `.env.e2e` (e2e tests)
+
+`NEON_PROJECT_ID` is encrypted inside `.env.e2e`, so the orchestrator reads it at runtime with `dotenvx get` (see step 1b below) rather than storing it in plaintext.
+
+**Legacy plaintext repos** (e.g. `markpost`, `wanderist`, until migrated) — secrets live in a plaintext file:
 
 ```
 /Volumes/External/Development/agents/envs/<repo-name>.env
 ```
 
-Each file contains repo-specific variables **except** `E2E_DATABASE_URL`, which is generated fresh from a Neon branch per run. Every env file must include:
+Each contains repo-specific variables **except** `E2E_DATABASE_URL`, which is generated fresh per run, and must include:
 
 - `NEON_PROJECT_ID`: the Neon project ID for this repo
 - Clerk auth keys and any other vars required by Playwright
 
-`markpost-cli` has no E2E tests or database, so no env file needed.
+**Detecting which style a repo uses:** if `envs/<repo-name>.keys` exists, treat it as a dotenvx repo; otherwise use the legacy `.env` path.
+
+`markpost-cli` has no E2E tests or database, so no env or keys file is needed.
 
 ### Pre-run: check for E2E script
 
@@ -332,23 +349,44 @@ If the output is `{}` or empty, skip E2E entirely and continue without error.
 
 When the `e2e` script exists, follow these steps in order:
 
-**1. Copy the env file into the clone:**
+**1a. Provide secrets to the clone** — depends on the repo style (see Env file convention above):
 
-```bash
-cp /Volumes/External/Development/agents/envs/<repo-name>.env <clone-dir>/.env.test
-```
+- **dotenvx repo** — drop the decrypt keys in; the encrypted `.env` / `.env.e2e` are already committed in the clone:
+
+  ```bash
+  cp /Volumes/External/Development/agents/envs/<repo-name>.keys <clone-dir>/.env.keys
+  ```
+
+- **Legacy plaintext repo** — copy the plaintext env file in:
+
+  ```bash
+  cp /Volumes/External/Development/agents/envs/<repo-name>.env <clone-dir>/.env.test
+  ```
+
+**1b. Resolve Neon credentials into the shell** — the `neon`/`neonctl` CLI is not installed globally on this box, so drive it with `npx neonctl` and pass credentials explicitly.
+
+- **dotenvx repo** — `NEON_PROJECT_ID` and `NEON_API_KEY` are encrypted in `.env.e2e`; decrypt both into the shell before the Neon commands:
+
+  ```bash
+  export NEON_PROJECT_ID=$(cd <clone-dir> && npx dotenvx get NEON_PROJECT_ID -f .env.e2e)
+  export NEON_API_KEY=$(cd <clone-dir> && npx dotenvx get NEON_API_KEY -f .env.e2e)
+  ```
+
+- **Legacy plaintext repo** — `NEON_PROJECT_ID` comes from the copied `.env` file. These env files carry no API key, so the Neon commands rely on `neonctl`'s stored auth (`npx neonctl auth`); omit the `--api-key` flag below for these.
 
 **2. Create a Neon branch for this run:**
 
 ```bash
-neon branches create --name "agent-<task-slug>" --project-id $NEON_PROJECT_ID
+npx neonctl branches create --name "agent-<task-slug>" --project-id "$NEON_PROJECT_ID" --api-key "$NEON_API_KEY"
 ```
 
-**3. Export `E2E_DATABASE_URL` from the branch connection string:**
+**3. Export `E2E_DATABASE_URL` from the branch connection string** (the branch name is a positional arg for `neonctl`):
 
 ```bash
-export E2E_DATABASE_URL=$(neon connection-string --branch "agent-<task-slug>" --project-id $NEON_PROJECT_ID)
+export E2E_DATABASE_URL=$(npx neonctl connection-string "agent-<task-slug>" --project-id "$NEON_PROJECT_ID" --api-key "$NEON_API_KEY")
 ```
+
+`npm run e2e` for a dotenvx repo runs `dotenvx run -f .env.e2e -- playwright test`; the exported `E2E_DATABASE_URL` overrides the value baked into `.env.e2e` because dotenvx does not clobber an already-set process env var.
 
 **4. Run E2E tests:**
 
@@ -359,11 +397,14 @@ npm run e2e
 **5. Cleanup (always run, even if tests fail):**
 
 ```bash
-neon branches delete "agent-<task-slug>" --project-id $NEON_PROJECT_ID --confirm
+npx neonctl branches delete "agent-<task-slug>" --project-id "$NEON_PROJECT_ID" --api-key "$NEON_API_KEY"
+# dotenvx repo:
+rm <clone-dir>/.env.keys
+# legacy plaintext repo:
 rm <clone-dir>/.env.test
 ```
 
-Never leave a Neon branch or `.env.test` file behind. Run the cleanup step in a `finally`-equivalent pattern (i.e. unconditionally after the test run, regardless of exit code).
+Never leave a Neon branch, `.env.keys`, or `.env.test` file behind. Run the cleanup step in a `finally`-equivalent pattern (i.e. unconditionally after the test run, regardless of exit code). The clone is deleted after the PR opens anyway, but removing the secrets file explicitly guards against a key file lingering if cleanup order changes.
 
 ---
 
