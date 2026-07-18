@@ -11,6 +11,7 @@ Process each of these repositories in order on every run:
 3. `https://github.com/grimicorn/basin`
 4. `https://github.com/grimicorn/wanderist`
 5. `https://github.com/grimicorn/dev`
+6. `https://github.com/grimicorn/danholloran-me`
 
 For each repo URL, derive the owner and repo name from the URL. For example, given `https://github.com/grimicorn/basin`, the owner is `grimicorn` and the repo name is `basin`.
 
