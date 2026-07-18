@@ -72,16 +72,48 @@ On every run, treat **all** open agent PRs for the repo as candidates for the fi
 2. Open agent PRs that are behind main or have merge conflicts: merge main into the branch and fix any conflicts. Check with `gh pr view <PR-URL> --json mergeStateStatus` (status `BEHIND` or `DIRTY` means action is needed)
 3. Open agent PRs with failing CI checks (run `gh pr checks <PR-URL>` for each open agent PR; treat any PR with one or more failing checks as a task to fix)
 4. Open PRs with review feedback: address **all** feedback from humans and any automated review bots; assume every comment is actionable. Fetch comments with `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`
-5. Issues labeled **P1**
-6. Issues labeled **P2**
-7. Issues labeled **P3**
-8. Issues labeled **P4**
+5. **Dependabot PRs that are failing CI or behind main** (see Dependabot PRs below): fix the failing checks and/or merge main in so the bump can be merged. Only pick up Dependabot PRs that are **not assigned to `grimicorn`** and not labeled `blocked`
+6. Issues labeled **P1**
+7. Issues labeled **P2**
+8. Issues labeled **P3**
+9. Issues labeled **P4**
 
 Do not pick up a task that already has an open PR associated with it.
 
-Do not pick up any issue assigned to `grimicorn`; skip it and note it in the final report. These are reserved for human triage (e.g. blocked issues reassigned during retry handling).
+Do not pick up any issue **or Dependabot PR** assigned to `grimicorn`; skip it and note it in the final report. Issues are reserved for human triage (e.g. blocked issues reassigned during retry handling); Dependabot PRs assigned to `grimicorn` are still awaiting the human's review (Dependabot assigns them to the human by default, and the human unassigns once reviewed to hand the PR off to the agent — see Dependabot PRs below).
 
 If an issue has a **Dependencies** section, check whether each listed issue is closed before picking up the task. If any dependency is still open, skip the issue and note it in the final report.
+
+---
+
+## Dependabot PRs
+
+Dependabot opens dependency-bump PRs on these repos. They frequently land red — a failed install, a lint failure, or a test broken by the new version. The agent fixes those so the human only has to review and merge, never babysit CI.
+
+**The handoff is assignment-based.** Dependabot assigns each PR to `grimicorn` by default. The human reviews the bump, then **unassigns themselves** to hand the PR to the agent. So:
+
+- A Dependabot PR **assigned to `grimicorn`** is still in human review — skip it (same rule as issues assigned to `grimicorn`).
+- A Dependabot PR **not assigned to `grimicorn`** (and not labeled `blocked`) is the agent's to fix.
+
+**Identify Dependabot PRs** by author. List open PRs and filter to the Dependabot bot:
+
+```bash
+gh pr list --repo <owner>/<repo> --state open --json number,url,author,assignees,labels,mergeStateStatus --author "app/dependabot"
+```
+
+(The author login is `app/dependabot`; some setups report `dependabot[bot]`. Match either.) Treat a Dependabot PR as a task when it is not assigned to `grimicorn`, not labeled `blocked`, and either has one or more failing checks (`gh pr checks <PR-URL>`) or is `BEHIND`/`DIRTY` (`gh pr view <PR-URL> --json mergeStateStatus`).
+
+**Skip the independent agent code review for Dependabot PRs.** A one- or two-package version bump does not warrant the 3-round reviewer loop. The worker still runs **lint and tests locally** and must get **CI green** before handing back — that is the whole bar for these. (This is the one documented exception to the Agent Code Review section.)
+
+**Cap and ordering.** Dependabot PRs are authored by the bot, not the agent, so they **do not count toward the 10-open-agent-PR cap**, and fixing one opens no new PR — so this work proceeds **regardless of the cap**, exactly like the other open-PR maintenance items (behind-main, failing-CI, review-feedback).
+
+**Handoff when green.** Once CI passes, the worker re-requests the human's review so the fixed PR returns to their merge queue, and leaves it unassigned (do **not** re-assign it to `grimicorn`, or the next run would skip it as "still in human review"). Use REST, since `gh pr edit --add-reviewer` fails on the agent token's missing `read:org` scope:
+
+```bash
+gh api -X POST repos/<owner>/<repo>/pulls/<PR-NUMBER>/requested_reviewers -f "reviewers[]=grimicorn"
+```
+
+**If the bump can't be made green in 3 attempts** (e.g. a breaking change needing a human call), apply the Retry Limit rule to the PR: add the `blocked` label, assign it to `grimicorn`, and comment what decision is needed. The next run then skips it until the human clears it.
 
 ---
 
@@ -185,6 +217,36 @@ When complete:
 - If any of the feedback came from `grimicorn`, re-request their review once it's addressed so the PR returns to their queue (use REST, since `gh pr edit --add-reviewer` fails on the agent token's missing `read:org` scope): `gh api -X POST repos/<owner>/<repo>/pulls/<PR-NUMBER>/requested_reviewers -f "reviewers[]=grimicorn"`
 - Delete the local clone directory
 - Report back with the PR URL
+```
+
+**For Dependabot PRs, subagent prompt structure** (see Dependabot PRs above — the independent code review is intentionally skipped for these):
+
+```
+You are a subagent working on the <owner>/<repo-name> repository.
+
+Clone <repo-url> into /tmp/ as <repo-name>-<short-task-slug>/, then check out the existing Dependabot branch for this PR.
+
+PR: <GitHub PR URL>
+Problem: <failing check names from `gh pr checks`, and/or that the branch is BEHIND/DIRTY>
+
+This is a Dependabot dependency bump. Get it into a mergeable, green state:
+- Install dependencies fresh so the lockfile matches the bump.
+- If the branch is behind main or has conflicts, merge origin/main in and resolve them, preserving the bump.
+- Run lint and tests locally and fix whatever the new version broke (adapt call sites to breaking API changes, update snapshots that legitimately changed, etc.). Make the smallest change that makes CI honest — do not disable or loosen a check to make it pass.
+- Do NOT run the independent agent code review; it is skipped for Dependabot PRs. Local lint + tests passing and CI green is the bar.
+
+When complete:
+- Push the updated branch to GitHub (the existing PR will update automatically).
+- Re-request the human's review so the PR returns to their merge queue, and leave it unassigned — do NOT assign it to grimicorn: `gh api -X POST repos/<owner>/<repo>/pulls/<PR-NUMBER>/requested_reviewers -f "reviewers[]=grimicorn"`
+- Post a short comment summarizing what you fixed.
+- Delete the local clone directory.
+- Report back with the PR URL and a summary of what was fixed.
+
+If you cannot get CI green in 3 attempts (e.g. the bump is a breaking change that needs a human decision):
+- Add the `blocked` label to the PR and assign it to grimicorn.
+- Post a comment explaining what decision or change is needed to unblock it.
+- Delete the local clone directory.
+- Report back with the PR URL and what blocked it.
 ```
 
 ---
@@ -420,6 +482,8 @@ These cannot be enforced by the linter; subagents must follow them:
 ---
 
 ## Agent Code Review
+
+**Exception:** Dependabot PRs skip this review entirely (see Dependabot PRs). For those, local lint + tests passing and CI green is the whole bar. Everything below applies to all other tasks.
 
 **Before pushing the branch**, subagents must get an independent code review from a separate Claude agent. This is a second reviewer with fresh context (it did not write the code), so it catches issues the implementer misses. Run it as a **review-and-fix loop of up to 3 rounds**, stopping early as soon as a round returns exactly `No issues found`.
 
