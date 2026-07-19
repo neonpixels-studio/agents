@@ -540,7 +540,7 @@ That review request is the "ready for your review" signal. The human stays the f
 
 Per-repo secrets live in `/Volumes/External/Development/agents/envs/`. There are two styles, and a repo uses exactly one:
 
-**dotenvx repos** (e.g. `basin`) — secrets are committed to the repo as encrypted `.env` / `.env.e2e` files. This workspace holds only the decrypt keys:
+**dotenvx repos** (`markpost`, `basin`, `wanderist`) — secrets are committed to the repo as encrypted `.env` / `.env.e2e` files. This workspace holds only the decrypt keys:
 
 ```
 /Volumes/External/Development/agents/envs/<repo-name>.keys
@@ -553,7 +553,7 @@ The `.keys` file contains only the private keys this box needs (local + e2e); ne
 
 `NEON_PROJECT_ID` is encrypted inside `.env.e2e`, so the orchestrator reads it at runtime with `dotenvx get` (see step 1b below) rather than storing it in plaintext.
 
-**Legacy plaintext repos** (e.g. `markpost`, `wanderist`, until migrated) — secrets live in a plaintext file:
+**Legacy plaintext repos** (none remain as of July 19th, 2026 — `markpost`, `basin`, and `wanderist` have all migrated to dotenvx; kept here in case a new repo joins before migrating) — secrets live in a plaintext file:
 
 ```
 /Volumes/External/Development/agents/envs/<repo-name>.env
