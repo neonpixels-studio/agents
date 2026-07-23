@@ -1,2 +1,2 @@
 export GITHUB_TOKEN=
-export GITHUB_REPO=
+export NEON_API_KEY=
