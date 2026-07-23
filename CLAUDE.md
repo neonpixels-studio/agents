@@ -43,7 +43,7 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
 3. Monitor progress and surface blockers.
 4. Never directly edit code; delegate everything.
 5. After all repos: check CI status on every open agent PR (see CI Status Check) and include results in the final report.
-6. **If today is Wednesday or Saturday**, run Weekly Improvement Scan digest **generation** for every repo after task processing (generation-days-only; promotion in 2a is daily). Generation obeys the usage limits — if a stop threshold was hit during processing, skip it.
+6. **If today is Wednesday or Sunday**, run Weekly Improvement Scan digest **generation** for every repo after task processing (generation-days-only; promotion in 2a is daily). Generation obeys the usage limits — if a stop threshold was hit during processing, skip it.
 
 ## Task Queue
 
@@ -226,7 +226,7 @@ Weekly, the orchestrator scans each repo for improvements/missing functionality 
 
 **Two cadences:**
 - **Digest promotion — daily** (Phase 1). Triggered by the human closing a digest. An **open** digest = not triaged yet; leave it alone.
-- **Digest generation — Wednesdays and Saturdays only** (Phase 2). Runs at the end of a normal run on those days.
+- **Digest generation — Wednesdays and Sundays only** (Phase 2). Runs at the end of a normal run on those days.
 
 Generation guards:
 - **At most once per generation day:** skip if a digest was already created today — `gh issue list --repo <owner>/<repo> --label improvement-digest --state all --search "created:$(date +%Y-%m-%d)" --json number`.
@@ -258,7 +258,7 @@ Runs every run as step 2a, per repo. **The human closing a digest is the trigger
 5. For each **unchecked** item: append a record with `status: rejected` (won't be re-proposed).
 6. Mark the digest done (never reprocessed): `gh issue edit <digest-url> --add-label digest-processed` then `gh issue comment <digest-url> --body "Promoted: <urls>. Dismissed: <n> unchecked."` Leave it **closed**. The `digest-processed` label is the idempotency guard.
 
-### Phase 2 — Generate a new digest (Wednesdays and Saturdays only)
+### Phase 2 — Generate a new digest (Wednesdays and Sundays only)
 
 Per repo, independent of promotion.
 
@@ -323,7 +323,7 @@ The digest's per-item priority label is a suggestion only; it's applied to the p
 
 Add an **Improvement Scan** section covering:
 - **Promotion (daily):** per repo, which closed digests were processed, how many promoted (with new issue URLs), how many dismissed.
-- **Generation (Wed & Sat):** per repo, the digest URL, or skip reason (`skipped — already generated today`, `skipped — open digest still awaiting triage`, or `no candidates cleared the bar`).
+- **Generation (Wed & Sun):** per repo, the digest URL, or skip reason (`skipped — already generated today`, `skipped — open digest still awaiting triage`, or `no candidates cleared the bar`).
 - **Held set:** per repo, how many candidates are parked (`status: held`) and carrying forward, with titles.
 
 ## Code Standards
@@ -455,7 +455,7 @@ After all repos, summarize grouped by repo:
 - Tasks with unrecoverable errors (and what they are)
 - Tasks/repos skipped and why (including 10-PR cap hits)
 - CI status for all open agent PRs: passing, failing (with check names), or pending
-- On generation days (Wed/Sat), the Improvement Scan results (digest URLs per repo; items promoted/dismissed from prior digests)
+- On generation days (Wed/Sun), the Improvement Scan results (digest URLs per repo; items promoted/dismissed from prior digests)
 
 ## What You Must Not Do
 
