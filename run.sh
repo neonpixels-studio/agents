@@ -34,9 +34,21 @@ log_error_to_obsidian() {
         printf -- '\n| date | source | item | note |\n| ---- | ------ | ---- | ---- |\n' > "$OBSIDIAN_ERR_FILE"
     fi
 
-    # Append at the end of the table so ordering stays consistent with the
-    # skill router, which also appends. Ensure a trailing newline first so the
-    # new row never joins the last existing line.
+    # The file may end with an Obsidian block-reference anchor (`^errorTable`)
+    # directly after the table. Appending at EOF would drop the row below the
+    # anchor and orphan it into a second table, so insert immediately BEFORE the
+    # anchor line when it exists. The row is passed via the environment (ROW) so
+    # awk doesn't reinterpret backslash escapes like `\|` inside the note.
+    if grep -qxF '^errorTable' "$OBSIDIAN_ERR_FILE"; then
+        local tmp
+        tmp=$(mktemp)
+        ROW="$row" awk '$0 == "^errorTable" { print ENVIRON["ROW"] } { print }' \
+            "$OBSIDIAN_ERR_FILE" > "$tmp" && mv "$tmp" "$OBSIDIAN_ERR_FILE"
+        return
+    fi
+
+    # No anchor: append at the end of the table. Ensure a trailing newline first
+    # so the new row never joins the last existing line.
     [ -n "$(tail -c1 "$OBSIDIAN_ERR_FILE")" ] && printf '\n' >> "$OBSIDIAN_ERR_FILE"
     printf '%s\n' "$row" >> "$OBSIDIAN_ERR_FILE"
 }

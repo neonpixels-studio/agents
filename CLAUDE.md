@@ -451,7 +451,7 @@ All errors (usage limit stops, unrecoverable subagent failures, PR cap hits) go 
 
 **File:** `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Errors.md`
 
-Shared with the skill router, so every row carries a `source` column. **Append** a new row at the **bottom** of the table. Columns in order: `date`, `source`, `item`, `note`:
+Shared with the skill router, so every row carries a `source` column. Add a new row at the **bottom of the table**. The file ends with an Obsidian block-reference anchor line (`^errorTable`) directly after the table — insert the new row **immediately before that anchor line, never after it** (a row appended after `^errorTable` orphans into a broken second table). If no anchor is present, append at end of file. Columns in order: `date`, `source`, `item`, `note`:
 - **date:** `Month Dth, YYYY` (e.g. `June 8th, 2026`)
 - **source:** always `agents`
 - **item:** the repo name (last path segment of the URL); `all` for environment-wide errors. A usage limit stop that aborts the run is logged against the repo being processed at the time.
