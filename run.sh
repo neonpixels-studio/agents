@@ -109,7 +109,13 @@ if grep -q "Background tasks still running" "$RUN_ERR_FILE"; then
     log_error_to_obsidian "Run terminated early: a background subagent was killed at the wait ceiling before finishing, so its PR was likely never opened. Raise CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS if this recurs." "all"
 fi
 
-if [ "$EXIT_CODE" -ne 0 ]; then
+# An expired/unrefreshable OAuth session makes `claude -p` exit 1 within ~1s
+# before any work runs. The message lands in stdout JSON (LOG_FILE), not stderr,
+# so it never reached this error path and hid as a generic exit-1 for days.
+# Detect it explicitly and log an actionable row pointing at the fix.
+if tail -50 "$LOG_FILE" | grep -qa "OAuth session expired\|authentication_failed"; then
+    log_error_to_obsidian "Auth expired: claude could not authenticate (OAuth session expired). Re-run \`claude setup-token\` and update CLAUDE_CODE_OAUTH_TOKEN in .envrc. No repos were processed." "all"
+elif [ "$EXIT_CODE" -ne 0 ]; then
     log_error_to_obsidian "Run exited abnormally (exit code $EXIT_CODE); see agents-error.log for details." "all"
 fi
 

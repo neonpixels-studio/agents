@@ -1,2 +1,5 @@
 export GITHUB_TOKEN=
 export NEON_API_KEY=
+# Long-lived OAuth token from `claude setup-token` (starts with `sk-ant-oat...`).
+# Authenticates the unattended cron so the login can't silently expire mid-week.
+export CLAUDE_CODE_OAUTH_TOKEN=
