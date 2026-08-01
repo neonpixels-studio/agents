@@ -35,15 +35,16 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
 
 1. Run the pre-run usage check; stop entirely if thresholds are hit.
 2. For each repo, in order:
-   a. **Promote any closed, unprocessed improvement digest** (see Weekly Improvement Scan → Phase 1). This runs **every day**, not just on generation days — closing a digest is the human's go signal. Do it even if the PR cap is hit (creating issues is cheap).
-   b. Check open agent PR count; if already 10, skip remaining task work for the repo, log the cap hit, continue.
-   c. Read the task queue (see priority order below).
-   d. Spawn a subagent per task via the Agent tool.
-   e. After each subagent, run the mid-run usage check; stop entirely (across all repos) if thresholds are hit.
+   a. **Harvest suggestion intake** (see Weekly Improvement Scan → Phase 0). Daily; records PR/human follow-up suggestions to the ledger. Do it even if the PR cap is hit (ledger writes are cheap).
+   b. **Promote any closed, unprocessed improvement digest** (see Weekly Improvement Scan → Phase 1). This runs **every day**, not just on generation days — closing a digest is the human's go signal. Do it even if the PR cap is hit (creating issues is cheap).
+   c. Check open agent PR count; if already 10, skip remaining task work for the repo, log the cap hit, continue.
+   d. Read the task queue (see priority order below).
+   e. Spawn a subagent per task via the Agent tool.
+   f. After each subagent, run the mid-run usage check; stop entirely (across all repos) if thresholds are hit.
 3. Monitor progress and surface blockers.
 4. Never directly edit code; delegate everything.
 5. After all repos: check CI status on every open agent PR (see CI Status Check) and include results in the final report.
-6. **If today is Wednesday or Sunday**, run Weekly Improvement Scan digest **generation** for every repo after task processing (generation-days-only; promotion in 2a is daily). Generation obeys the usage limits — if a stop threshold was hit during processing, skip it.
+6. **If today is Wednesday or Sunday**, run Weekly Improvement Scan digest **generation** for every repo after task processing (generation-days-only; intake in 2a and promotion in 2b are daily). Generation obeys the usage limits — if a stop threshold was hit during processing, skip it.
 
 ## Task Queue
 
@@ -128,9 +129,18 @@ Clone <repo-url> into /tmp/ as <repo-name>-<short-task-slug>/[, then check out t
 Close every worker prompt with:
 
 ```
+- If while working you identified concrete, out-of-scope follow-up improvements grounded in code you actually touched (the "flagging for a follow-up issue" notes you'd normally write in prose), record them as a machine-parseable block in the PR body so the improvement digest can pick them up. Wrap it exactly like this and add the `has-suggestions` label to the PR (`gh pr edit <PR-URL> --add-label has-suggestions`; create the label first if missing: `gh label create has-suggestions --color FBCA04 --description "PR carries follow-up suggestions for the improvement digest" 2>/dev/null || true`). Omit both the block and the label if you have no follow-ups — never invent filler.
+  ```
+  <!-- suggestions:start -->
+  ## Follow-up suggestions
+  - `<short title>` — <one-sentence summary> _(suggested: <Bug|P1|P2|P3|P4>, effort: <S|M|L>, evidence: <path/area>)_
+  <!-- suggestions:end -->
+  ```
 - Delete the local clone directory
 - Report back with the PR URL[ and a summary]
 ```
+
+(Dependabot workers skip the suggestions block — they do dependency maintenance, not feature/follow-up work.)
 
 Below, only the task-specific middle + closing deltas are given.
 
@@ -224,9 +234,12 @@ When an issue has a **Reference HTML** section (see `html-issue.md`), treat the 
 
 Weekly, the orchestrator scans each repo for improvements/missing functionality that **don't already have an issue** and surfaces them as one **digest issue** per repo for human triage. This generates candidate work; it builds nothing.
 
-**Two cadences:**
+Candidates come from two sources: the **generator** (a fresh codebase scan, Wed/Sun) and **suggestion intake** — follow-up notes the agent leaves on PRs plus `/suggest` comments the human leaves on PRs, harvested **daily** into the ledger so they're queued and ready by the next generation day.
+
+**Three cadences:**
+- **Suggestion intake — daily** (Phase 0). Harvest PR-sourced and human-sourced suggestions into the ledger as pre-vetted `held` candidates.
 - **Digest promotion — daily** (Phase 1). Triggered by the human closing a digest. An **open** digest = not triaged yet; leave it alone.
-- **Digest generation — Wednesdays and Sundays only** (Phase 2). Runs at the end of a normal run on those days.
+- **Digest generation — Wednesdays and Sundays only** (Phase 2). Runs at the end of a normal run on those days. Pulls the whole ledger pool (generator output + carried `held`, including intake) through the ranker.
 
 Generation guards:
 - **At most once per generation day:** skip if a digest was already created today — `gh issue list --repo <owner>/<repo> --label improvement-digest --state all --search "created:$(date +%Y-%m-%d)" --json number`.
@@ -242,14 +255,26 @@ Persistent memory of every candidate ever proposed, so the scan never re-propose
 - **Append-only JSONL, latest record per `id` wins.** To change status, append a new record with the same `id` — never rewrite the file.
 - **Record:**
   ```json
-  {"id": "<repo-short>-<YYYYMMDD>-<n>", "date": "<YYYY-MM-DD>", "title": "...", "summary": "...", "rationale": "...", "suggested_label": "P2", "effort": "M", "status": "proposed", "digest_issue_url": "...", "promoted_issue_url": null, "notes": ""}
+  {"id": "<repo-short>-<YYYYMMDD>-<n>", "date": "<YYYY-MM-DD>", "title": "...", "summary": "...", "rationale": "...", "suggested_label": "P2", "effort": "M", "status": "proposed", "source": "scan", "origin_pr_url": null, "digest_issue_url": "...", "promoted_issue_url": null, "notes": ""}
   ```
-  `status` ∈ `proposed | promoted | rejected | held`. `id` e.g. `basin-20260724-2`.
-- **`held`:** a strong candidate the ranker keeps but cuts only for the 5-item cap, or a root-cause/larger-than-one-issue item worth remembering. Not in this week's digest; carried forward and re-injected into the ranker pool every run as **pre-vetted** (`"carried": true`) until surfaced (→ `proposed`), promoted, or dropped. It must clear the same bar as a survivor — held is not a filler bucket (filler is `rejected`, dropped forever). A held item keeps its `id` for life; append a new record only when status actually changes.
+  `status` ∈ `proposed | promoted | rejected | held`. `source` ∈ `scan | pr | human` (default `scan`; `pr`/`human` come from Phase 0 intake, with `origin_pr_url` set). `id` e.g. `basin-20260724-2`.
+- **`held`:** a strong candidate the ranker keeps but cuts only for the 5-item cap, a root-cause/larger-than-one-issue item worth remembering, **or a freshly-intaken PR/human suggestion awaiting its first ranking**. Not in this week's digest; carried forward and re-injected into the ranker pool every run as **pre-vetted** (`"carried": true`) until surfaced (→ `proposed`), promoted, or dropped. It must clear the same bar as a survivor — held is not a filler bucket (filler is `rejected`, dropped forever). A held item keeps its `id` for life; append a new record only when status actually changes.
+
+### Phase 0 — Suggestion intake (daily)
+
+Runs every run per repo, before promotion. Harvests two suggestion sources into the ledger as `held` candidates so the next generation ranks them alongside fresh scan output. Cheap (GitHub reads + ledger appends, no subagents) — runs even when the PR cap is hit and on non-generation days.
+
+Scope the scan to bound cost: **open PRs plus PRs merged/closed in the last 7 days.**
+
+1. **Agent-sourced (PR body blocks).** Find PRs carrying follow-ups: `gh pr list --repo <owner>/<repo> --state all --label has-suggestions --search "updated:>=<7-days-ago>" --json number,url,body`. For each, parse the `<!-- suggestions:start -->`…`<!-- suggestions:end -->` block; each bullet is one candidate. Derive `id` = `<repo-short>-pr<NUM>-<n>` (bullet index).
+2. **Human-sourced (`/suggest` comments).** For each in-scope PR, read conversation comments: `gh api repos/<owner>/<repo>/issues/<PR-NUMBER>/comments --jq '.[] | {id, user: .user.login, body}'`. Any comment whose body has a line beginning `/suggest ` is a candidate — the text after `/suggest ` is the suggestion (first sentence = `title`/`summary`; infer `suggested_label`/`effort` if the human didn't state them). Derive `id` = `<repo-short>-pr<NUM>-h<comment-id>` (the GitHub comment id makes this idempotent and stable).
+3. **Dedupe by `id` against the ledger.** Skip any `id` that already has a record — never re-intake. This is the whole idempotency guard (no label juggling needed).
+4. **Append a ledger record** for each new candidate: `status: held`, `carried: true`, `source: pr` (step 1) or `human` (step 2), `origin_pr_url` set, `date` today. Held items already carry into the ranker pool, so nothing else is needed to feed generation.
+5. **Acknowledge human suggestions** so the human sees them land: on each newly-intaken `/suggest` comment's PR, `gh pr comment <PR-URL> --body "📥 Recorded \`<title>\` to the improvement ledger — it'll compete in the next digest (added to suggestions)."` Skip the ack for agent-sourced blocks (no human waiting on them).
 
 ### Phase 1 — Digest promotion (daily)
 
-Runs every run as step 2a, per repo. **The human closing a digest is the trigger.**
+Runs every run as step 2b, per repo. **The human closing a digest is the trigger.**
 
 1. List **closed** digests not yet processed: `gh issue list --repo <owner>/<repo> --label improvement-digest --state closed --json number,body,url,labels`; skip any with `digest-processed`. Never touch **open** digests.
 2. Ensure the label exists: `gh label create digest-processed --repo <owner>/<repo> --color 0E8A16 --description "Improvement digest whose checks have been promoted" 2>/dev/null || true`.
@@ -263,7 +288,7 @@ Runs every run as step 2a, per repo. **The human closing a digest is the trigger
 Per repo, independent of promotion.
 
 0. Skip if either guard trips (already generated today, or an open digest exists); note the reason.
-1. Read the ledger and open issue titles (the "already known" set) plus the current **held** set (every `id` whose latest record is `held`) — held items carry forward and re-enter ranking.
+1. Read the ledger and open issue titles (the "already known" set) plus the current **held** set (every `id` whose latest record is `held`) — held items carry forward and re-enter ranking. This held set now includes Phase 0 intake (`source: pr | human`); those enter the ranker pool exactly like any carried candidate.
 2. Spawn a **generator subagent on Sonnet** (read-only; no push/PR/issue) with the prompt below. If the repo is a cross-repo dependent, add the read-only reference-clone instruction and tell it to ground CLI/consumer candidates in the dependency's contract. Held titles are in the exclusion list, so the generator won't re-derive them — they reach the ranker via the orchestrator.
 3. Feed the ranker **both** the generator's fresh candidates and the carried-forward held items (each tagged `"carried": true`). Spawn a **ranker subagent on Opus** (independent). It keeps **at most 5** survivors and returns a capped `held` list.
 4. Persist to the ledger:
@@ -290,6 +315,7 @@ You are an independent reviewer scoring improvement candidates for <owner>/<repo
 Candidates (JSON):
 <fresh generator output + carried-forward held items>
 Some are tagged `"carried": true` — pre-vetted (a prior run kept them but cut for space). Treat them as clearing the bar; prefer them on ties against a fresh candidate of similar value; do not re-reject a carried item unless now clearly obsolete (already done or superseded).
+Items with `"source": "pr"` are agent-authored follow-ups grounded in real code changes; items with `"source": "human"` are suggestions the maintainer explicitly asked for — never hard-reject a `source: human` item as filler; if it can't make the top 5, put it in `held` so it carries forward (only drop it if already done or obsolete).
 Reject anything that is: generic best-practice noise not grounded in this codebase, speculative, already effectively done, cosmetic with no payoff, or so large it's an epic not a single issue. Prefer concrete, bounded, high-leverage improvements.
 Return one JSON object with two arrays:
 - `survivors`: at most 5, best first — this week's digest.
@@ -317,11 +343,14 @@ Every returned item keeps its original fields plus a one-line `justification`, a
   </details>
   ```
 
+For a survivor with `source: pr | human`, append its origin to the item's meta so you recognize suggestions you or the agent raised, e.g. `_(suggested: P2, effort: M, from PR #123)_`.
+
 The digest's per-item priority label is a suggestion only; it's applied to the promoted issue at promotion time (Phase 1), not to the digest.
 
 ### Reporting the scan
 
 Add an **Improvement Scan** section covering:
+- **Intake (daily):** per repo, how many new suggestions were harvested, split by `source` (`pr` vs `human`), with their origin PR URLs.
 - **Promotion (daily):** per repo, which closed digests were processed, how many promoted (with new issue URLs), how many dismissed.
 - **Generation (Wed & Sun):** per repo, the digest URL, or skip reason (`skipped — already generated today`, `skipped — open digest still awaiting triage`, or `no candidates cleared the bar`).
 - **Held set:** per repo, how many candidates are parked (`status: held`) and carrying forward, with titles.
