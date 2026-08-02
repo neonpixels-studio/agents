@@ -127,6 +127,13 @@ fi
 # Detect it explicitly and log an actionable row pointing at the fix.
 if tail -50 "$LOG_FILE" | grep -qa "OAuth session expired\|authentication_failed"; then
     log_error_to_obsidian "Auth expired: claude could not authenticate (OAuth session expired). Re-run \`claude setup-token\` and update CLAUDE_CODE_OAUTH_TOKEN in .envrc. No repos were processed." "all"
+elif tail -50 "$LOG_FILE" | grep -qa "You've hit your session limit"; then
+    # A 5-hour session-limit rejection makes `claude -p` exit 1, but it's an
+    # expected throttle, not a crash. Log it as an informational skip so it stops
+    # masquerading as a generic abnormal exit. The next scheduled run in a fresh
+    # window retries automatically. Frequent rows here mean the run cadence
+    # outpaces the plan's 5-hour budget — space the runs out.
+    log_error_to_obsidian "Rate limited: hit the 5-hour session limit; run stopped without finishing. Not a failure — the next run in a fresh window retries. Recurring rows mean the cadence exceeds the plan's 5-hour budget." "all"
 elif [ "$EXIT_CODE" -ne 0 ]; then
     log_error_to_obsidian "Run exited abnormally (exit code $EXIT_CODE); see agents-error.log for details." "all"
 fi
