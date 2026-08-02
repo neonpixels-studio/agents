@@ -34,17 +34,18 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
 ## Your Responsibilities
 
 1. Run the pre-run usage check; stop entirely if thresholds are hit.
-2. For each repo, in order:
+2. **Scan pass — run this for every repo, in order, before any task work.** These phases are cheap (GitHub reads plus at most two generator/ranker subagents) and high-value, so they go first: a run that later hits a usage stop during the task pass has already recorded every suggestion, promoted every closed digest, and posted every generated digest.
    a. **Harvest suggestion intake** (see Weekly Improvement Scan → Phase 0). Daily; records PR/human follow-up suggestions to the ledger. Do it even if the PR cap is hit (ledger writes are cheap).
    b. **Promote any closed, unprocessed improvement digest** (see Weekly Improvement Scan → Phase 1). This runs **every day**, not just on generation days — closing a digest is the human's go signal. Do it even if the PR cap is hit (creating issues is cheap).
-   c. Check open agent PR count; if already 10, skip remaining task work for the repo, log the cap hit, continue.
-   d. Read the task queue (see priority order below).
-   e. Spawn a subagent per task via the Agent tool.
-   f. After each subagent, run the mid-run usage check; stop entirely (across all repos) if thresholds are hit.
-3. Monitor progress and surface blockers.
-4. Never directly edit code; delegate everything.
-5. After all repos: check CI status on every open agent PR (see CI Status Check) and include results in the final report.
-6. **If today is Wednesday or Sunday**, run Weekly Improvement Scan digest **generation** for every repo after task processing (generation-days-only; intake in 2a and promotion in 2b are daily). Generation obeys the usage limits — if a stop threshold was hit during processing, skip it.
+   c. **If today is Wednesday or Sunday, generate the repo's improvement digest** (see Weekly Improvement Scan → Phase 2). Generation-days-only; obeys the usage limits — skip if a stop threshold was already hit.
+3. **Task pass — run this for every repo, in order, only after the scan pass has completed for all repos.**
+   a. Check open agent PR count; if already 10, skip remaining task work for the repo, log the cap hit, continue.
+   b. Read the task queue (see priority order below).
+   c. Spawn a subagent per task via the Agent tool.
+   d. After each subagent, run the mid-run usage check; stop entirely (across all repos) if thresholds are hit.
+4. Monitor progress and surface blockers.
+5. Never directly edit code; delegate everything.
+6. After all repos: check CI status on every open agent PR (see CI Status Check) and include results in the final report.
 
 ## Task Queue
 
@@ -239,7 +240,7 @@ Candidates come from two sources: the **generator** (a fresh codebase scan, Wed/
 **Three cadences:**
 - **Suggestion intake — daily** (Phase 0). Harvest PR-sourced and human-sourced suggestions into the ledger as pre-vetted `held` candidates.
 - **Digest promotion — daily** (Phase 1). Triggered by the human closing a digest. An **open** digest = not triaged yet; leave it alone.
-- **Digest generation — Wednesdays and Sundays only** (Phase 2). Runs at the end of a normal run on those days. Pulls the whole ledger pool (generator output + carried `held`, including intake) through the ranker.
+- **Digest generation — Wednesdays and Sundays only** (Phase 2). Runs in the scan pass, before any task work, on those days. Pulls the whole ledger pool (generator output + carried `held`, including intake) through the ranker.
 
 Generation guards:
 - **At most once per generation day:** skip if a digest was already created today — `gh issue list --repo <owner>/<repo> --label improvement-digest --state all --search "created:$(date +%Y-%m-%d)" --json number`.
