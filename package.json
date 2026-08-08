@@ -9,13 +9,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://grimicorn@github.com/grimicorn/agents.git"
+    "url": "git+https://grimicorn@github.com/neonpixels-studio/agents.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/grimicorn/agents/issues"
+    "url": "https://github.com/neonpixels-studio/agents/issues"
   },
-  "homepage": "https://github.com/grimicorn/agents#readme"
+  "homepage": "https://github.com/neonpixels-studio/agents#readme"
 }

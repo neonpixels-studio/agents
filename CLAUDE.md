@@ -4,14 +4,14 @@ You are the **lead orchestrator agent**. Read the task queue from GitHub, delega
 
 ## Target Repositories
 
-Process these in order on every run. Derive owner/repo from each URL (`https://github.com/grimicorn/basin` → owner `grimicorn`, repo `basin`):
+Process these in order on every run. Derive owner/repo from each URL (`https://github.com/neonpixels-studio/basin` → owner `neonpixels-studio`, repo `basin`):
 
-1. `https://github.com/grimicorn/markpost`
-2. `https://github.com/grimicorn/markpost-cli`
-3. `https://github.com/grimicorn/basin`
-4. `https://github.com/grimicorn/wanderist`
-5. `https://github.com/grimicorn/dev`
-6. `https://github.com/grimicorn/danholloran-me`
+1. `https://github.com/neonpixels-studio/markpost`
+2. `https://github.com/neonpixels-studio/markpost-cli`
+3. `https://github.com/neonpixels-studio/basin`
+4. `https://github.com/neonpixels-studio/wanderist`
+5. `https://github.com/neonpixels-studio/dev`
+6. `https://github.com/neonpixels-studio/danholloran-me`
 
 ## Workspace Structure
 
@@ -39,7 +39,7 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
    b. **Promote any closed, unprocessed improvement digest** (see Weekly Improvement Scan → Phase 1). This runs **every day**, not just on generation days — closing a digest is the human's go signal. Do it even if the PR cap is hit (creating issues is cheap).
    c. **If today is Wednesday or Sunday, generate the repo's improvement digest** (see Weekly Improvement Scan → Phase 2). Generation-days-only; obeys the usage limits — skip if a stop threshold was already hit.
 3. **Task pass — run this for every repo, in order, only after the scan pass has completed for all repos.**
-   a. Check open agent PR count; if already 10, skip remaining task work for the repo, log the cap hit, continue.
+   a. Check open agent PR count; if already 10, skip remaining task work for the repo, note it in the report, continue.
    b. Read the task queue (see priority order below).
    c. Spawn a subagent per task via the Agent tool.
    d. After each subagent, run the mid-run usage check; stop entirely (across all repos) if thresholds are hit.
@@ -448,7 +448,7 @@ Never leave a Neon branch, `.env.keys`, or `.env.test` behind.
 
 ## Error Logging
 
-All errors (usage limit stops, unrecoverable subagent failures, PR cap hits) go to one consolidated Obsidian file. **Only the orchestrator and `run.sh` write to it** — subagents never touch the vault. Never create a per-repo error file.
+All errors (usage limit stops, unrecoverable subagent failures) go to one consolidated Obsidian file. PR cap hits are **not** errors — surface them in the report only, never in this table. **Only the orchestrator and `run.sh` write to it** — subagents never touch the vault. Never create a per-repo error file.
 
 **File:** `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Errors.md`
 
@@ -462,7 +462,6 @@ Examples:
 ```
 | June 8th, 2026 | agents | all | Weekly usage above 85%: run skipped. Weekly: X% \| Session: Y% |
 | June 8th, 2026 | agents | markpost | Session usage hit 85%: stopped early after 3 tasks. Weekly: X% \| Session: Y% |
-| June 8th, 2026 | agents | basin | PR cap hit: 10 open PRs, no new tasks started |
 | June 8th, 2026 | agents | wanderist | Task failed: <issue URL>, <brief reason> |
 ```
 
