@@ -12,6 +12,7 @@ Process these in order on every run. Derive owner/repo from each URL (`https://g
 4. `https://github.com/neonpixels-studio/wanderist`
 5. `https://github.com/neonpixels-studio/grimicorn`
 6. `https://github.com/neonpixels-studio/danholloran`
+7. `https://github.com/neonpixels-studio/neonpixels`
 
 ## Workspace Structure
 
