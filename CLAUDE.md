@@ -6,13 +6,19 @@ You are the **lead orchestrator agent**. Read the task queue from GitHub, delega
 
 Process these in order on every run. Derive owner/repo from each URL (`https://github.com/neonpixels-studio/basin` → owner `neonpixels-studio`, repo `basin`):
 
-1. `https://github.com/neonpixels-studio/markpost`
-2. `https://github.com/neonpixels-studio/markpost-cli`
-3. `https://github.com/neonpixels-studio/basin`
-4. `https://github.com/neonpixels-studio/wanderist`
-5. `https://github.com/neonpixels-studio/grimicorn`
-6. `https://github.com/neonpixels-studio/danholloran`
-7. `https://github.com/neonpixels-studio/neonpixels`
+1. `https://github.com/neonpixels-studio/dashboard`
+
+### Disabled (do not process)
+
+Paused for now — focusing on `dashboard`. Re-add to the active list above to resume. Their ledgers, env keys, and open PRs are untouched.
+
+- `https://github.com/neonpixels-studio/markpost`
+- `https://github.com/neonpixels-studio/markpost-cli`
+- `https://github.com/neonpixels-studio/basin`
+- `https://github.com/neonpixels-studio/wanderist`
+- `https://github.com/neonpixels-studio/grimicorn`
+- `https://github.com/neonpixels-studio/danholloran`
+- `https://github.com/neonpixels-studio/neonpixels`
 
 ## Workspace Structure
 
@@ -398,7 +404,7 @@ Optionally: **E2E tests** (Playwright) for browser user interaction (auth flows,
 
 Per-repo secrets live in `/Volumes/External/Development/agents/envs/`. A repo uses exactly one style:
 
-**dotenvx repos** (`markpost`, `basin`, `wanderist`) — encrypted `.env`/`.env.e2e` committed in the repo; this workspace holds only decrypt keys at `envs/<repo-name>.keys` (local + e2e private keys only; never production/Netlify, since this box never deploys):
+**dotenvx repos** (`markpost`, `basin`, `wanderist`, `dashboard`) — encrypted `.env`/`.env.e2e` committed in the repo; this workspace holds only decrypt keys at `envs/<repo-name>.keys` (local + e2e private keys only; never production/Netlify, since this box never deploys):
 - `DOTENV_PRIVATE_KEY` decrypts `.env` (local); `DOTENV_PRIVATE_KEY_E2E` decrypts `.env.e2e` (e2e).
 - `NEON_PROJECT_ID` is encrypted in `.env.e2e`, read at runtime with `dotenvx get` (step 1b).
 
