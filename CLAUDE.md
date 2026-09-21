@@ -7,18 +7,13 @@ You are the **lead orchestrator agent**. Read the task queue from GitHub, delega
 Process these in order on every run. Derive owner/repo from each URL (`https://github.com/neonpixels-studio/basin` → owner `neonpixels-studio`, repo `basin`):
 
 1. `https://github.com/neonpixels-studio/dashboard`
-
-### Disabled (do not process)
-
-Paused for now — focusing on `dashboard`. Re-add to the active list above to resume. Their ledgers, env keys, and open PRs are untouched.
-
-- `https://github.com/neonpixels-studio/markpost`
-- `https://github.com/neonpixels-studio/markpost-cli`
-- `https://github.com/neonpixels-studio/basin`
-- `https://github.com/neonpixels-studio/wanderist`
-- `https://github.com/neonpixels-studio/grimicorn`
-- `https://github.com/neonpixels-studio/danholloran`
-- `https://github.com/neonpixels-studio/neonpixels`
+2. `https://github.com/neonpixels-studio/markpost`
+3. `https://github.com/neonpixels-studio/markpost-cli`
+4. `https://github.com/neonpixels-studio/basin`
+5. `https://github.com/neonpixels-studio/wanderist`
+6. `https://github.com/neonpixels-studio/grimicorn`
+7. `https://github.com/neonpixels-studio/danholloran`
+8. `https://github.com/neonpixels-studio/neonpixels`
 
 ## Workspace Structure
 
