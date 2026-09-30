@@ -136,7 +136,7 @@ Close every worker prompt with:
   ```
   <!-- suggestions:start -->
   ## Follow-up suggestions
-  - `<short title>` — <one-sentence summary> _(suggested: <Bug|P1|P2|P3|P4>, effort: <S|M|L>, evidence: <path/area>)_
+  - `<short title>` - <one-sentence summary> _(suggested: <Bug|P1|P2|P3|P4>, effort: <S|M|L>, evidence: <path/area>)_
   <!-- suggestions:end -->
   ```
 - Delete the local clone directory
@@ -309,6 +309,7 @@ Study the codebase, README, and existing open + recently-closed issues (`gh issu
 Do NOT propose anything overlapping these already-tracked/decided items:
 <open issue titles + every ledger title with its status>
 Return 3–8 candidates as a JSON array, best first. Each: {title, summary (one sentence), rationale (why it adds value, tied to a specific file/area), suggested_label (Bug|P1|P2|P3|P4), effort (S|M|L), evidence (path/area you saw)}.
+In every text field use a plain hyphen (`-`); never use an em dash (`—`).
 Delete the clone when done. Your final message must be ONLY the JSON array.
 ```
 
@@ -328,15 +329,15 @@ Every returned item keeps its original fields plus a one-line `justification`, a
 
 ### Digest issue format
 
-- **Title:** `Improvement candidates — <repo-name> — <Month Dth, YYYY>`
+- **Title:** `Improvement candidates - <repo-name> - <Month Dth, YYYY>`
 - **Label:** `improvement-digest`
 - **Assignee:** `grimicorn` (lands it in the human's queue; the "skip grimicorn-assigned" rule keeps the daily loop from treating it as a task)
 - **Body:**
   ```
   Automated weekly scan. Check the boxes for the improvements you want turned into tracked issues, then **close this issue** when you're done triaging — closing it is the go signal. On its next run the agent creates the checked items as real issues (unassigned, labelled by priority) and leaves this digest closed; unchecked items are dismissed and won't be re-proposed. While this stays open nothing happens, so take as long as you need.
 
-  - [ ] `<id>` **<title>** — <summary> _(suggested: <label>, effort: <S|M|L>)_
-  - [ ] `<id>` **<title>** — <summary> _(suggested: <label>, effort: <S|M|L>)_
+  - [ ] `<id>` **<title>** - <summary> _(suggested: <label>, effort: <S|M|L>)_
+  - [ ] `<id>` **<title>** - <summary> _(suggested: <label>, effort: <S|M|L>)_
 
   <details><summary>Rationale</summary>
 
@@ -349,6 +350,8 @@ Every returned item keeps its original fields plus a one-line `justification`, a
 For a survivor with `source: pr | human`, append its origin to the item's meta so you recognize suggestions you or the agent raised, e.g. `_(suggested: P2, effort: M, from PR #123)_`.
 
 The digest's per-item priority label is a suggestion only; it's applied to the promoted issue at promotion time (Phase 1), not to the digest.
+
+Use a plain hyphen (`-`), never an em dash (`—`/`—`), everywhere in the digest — separators and any model-authored `title`/`summary`/`rationale` text. If a candidate's text arrives with an em dash, rewrite it to a hyphen before posting.
 
 ### Reporting the scan
 
