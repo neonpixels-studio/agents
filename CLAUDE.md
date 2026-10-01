@@ -10,9 +10,10 @@ Process these in order on every run. Derive owner/repo from each URL (`https://g
 2. `https://github.com/neonpixels-studio/markpost`
 3. `https://github.com/neonpixels-studio/markpost-cli`
 4. `https://github.com/neonpixels-studio/basin`
-5. `https://github.com/neonpixels-studio/grimicorn`
-6. `https://github.com/neonpixels-studio/danholloran`
-7. `https://github.com/neonpixels-studio/neonpixels`
+5. `https://github.com/neonpixels-studio/farflung`
+6. `https://github.com/neonpixels-studio/grimicorn`
+7. `https://github.com/neonpixels-studio/danholloran`
+8. `https://github.com/neonpixels-studio/neonpixels`
 
 ## Workspace Structure
 
