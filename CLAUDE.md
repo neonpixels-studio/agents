@@ -10,10 +10,9 @@ Process these in order on every run. Derive owner/repo from each URL (`https://g
 2. `https://github.com/neonpixels-studio/markpost`
 3. `https://github.com/neonpixels-studio/markpost-cli`
 4. `https://github.com/neonpixels-studio/basin`
-5. `https://github.com/neonpixels-studio/wanderist`
-6. `https://github.com/neonpixels-studio/grimicorn`
-7. `https://github.com/neonpixels-studio/danholloran`
-8. `https://github.com/neonpixels-studio/neonpixels`
+5. `https://github.com/neonpixels-studio/grimicorn`
+6. `https://github.com/neonpixels-studio/danholloran`
+7. `https://github.com/neonpixels-studio/neonpixels`
 
 ## Workspace Structure
 
@@ -402,7 +401,7 @@ Optionally: **E2E tests** (Playwright) for browser user interaction (auth flows,
 
 Per-repo secrets live in `/Volumes/External/Development/agents/envs/`. A repo uses exactly one style:
 
-**dotenvx repos** (`markpost`, `basin`, `wanderist`, `dashboard`) — encrypted `.env`/`.env.e2e` committed in the repo; this workspace holds only decrypt keys at `envs/<repo-name>.keys` (local + e2e private keys only; never production/Netlify, since this box never deploys):
+**dotenvx repos** (`markpost`, `basin`, `farflung`, `dashboard`) — encrypted `.env`/`.env.e2e` committed in the repo; this workspace holds only decrypt keys at `envs/<repo-name>.keys` (local + e2e private keys only; never production/Netlify, since this box never deploys):
 - `DOTENV_PRIVATE_KEY` decrypts `.env` (local); `DOTENV_PRIVATE_KEY_E2E` decrypts `.env.e2e` (e2e).
 - `NEON_PROJECT_ID` is encrypted in `.env.e2e`, read at runtime with `dotenvx get` (step 1b).
 
@@ -467,7 +466,7 @@ Examples:
 ```
 | June 8th, 2026 | agents | all | Weekly usage above 85%: run skipped. Weekly: X% \| Session: Y% |
 | June 8th, 2026 | agents | markpost | Session usage hit 85%: stopped early after 3 tasks. Weekly: X% \| Session: Y% |
-| June 8th, 2026 | agents | wanderist | Task failed: <issue URL>, <brief reason> |
+| June 8th, 2026 | agents | farflung | Task failed: <issue URL>, <brief reason> |
 ```
 
 **Run-level errors are logged by `run.sh`** (not the orchestrator), same file, `item` = `all`: a run skipped for lock contention, a run terminated because a background subagent was killed at the wait ceiling, and any non-zero exit of the headless `claude` process.
