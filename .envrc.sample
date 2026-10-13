@@ -5,5 +5,6 @@ export NEON_API_KEY=
 export CLAUDE_CODE_OAUTH_TOKEN=
 # Sentry auth token for the daily Sentry intake (docs/improvement-scan.md, Phase 3).
 # Create in Sentry > Settings > Developer Settings > Personal Tokens (or an org
-# internal integration) with read-only scopes: org:read, project:read, event:read.
+# internal integration) with scopes: org:read, project:read, event:read, and
+# event:write (event:write lets the run resolve/archive Sentry issues when the GitHub issue closes).
 export SENTRY_AUTH_TOKEN=

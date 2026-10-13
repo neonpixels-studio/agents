@@ -105,18 +105,39 @@ Runs every run per repo, after Phase 1, in the scan pass. Turns the most severe 
 | `farflung` | `farflung` |
 | `markpost` | `markpost` |
 
-Org slug: `neonpixels`. API base: `https://sentry.io/api/0`. Auth: `Authorization: Bearer $SENTRY_AUTH_TOKEN` (from `.envrc`; read-only scopes `org:read`, `project:read`, `event:read`).
+Org slug: `neonpixels`. API base: `https://sentry.io/api/0`. Auth: `Authorization: Bearer $SENTRY_AUTH_TOKEN` (from `.envrc`; scopes `org:read`, `project:read`, `event:read`, `event:write`; `event:write` is only for the status sync in step 3).
 
 **Limits (named, tune here):**
 - `SENTRY_NEW_PER_RUN = 5`: max issues filed or reopened per repo per run.
 - `SENTRY_OPEN_CEILING = 10`: file nothing while the repo already has this many open `sentry` issues; otherwise file at most `min(SENTRY_NEW_PER_RUN, SENTRY_OPEN_CEILING - open)`.
 
+**Status mapping (GitHub close reason → Sentry status):**
+
+| GitHub issue closed as | Sentry update | Comes back when |
+| ---------------------- | ------------- | --------------- |
+| completed (fixed) | resolved in next release | it fires in a newer release (Sentry marks it `regressed`) |
+| not planned (noise) | archived until escalating | its volume spikes (Sentry marks it `escalating`) |
+
+Either way it returns to `is:unresolved`, so step 4 reopens the GitHub issue. Nothing is skipped forever.
+
 Steps per repo:
 
-0. **Guards.** If `SENTRY_AUTH_TOKEN` is empty or any Sentry call returns 401/403, log one Errors row (`item` = repo, note = the status) and skip this phase for the repo. Never fail silently. Count open issues: `gh issue list --repo <owner>/<repo> --label sentry --state open --json number --jq length`; at or above the ceiling, skip and note it.
-1. **Ensure labels:** `gh label create sentry --repo <owner>/<repo> --color 362D59 --description "Filed from a Sentry production error" 2>/dev/null || true` (`bug` already exists).
+0. **Guard.** If `SENTRY_AUTH_TOKEN` is empty or any Sentry call returns 401/403, log one Errors row (`item` = repo, note = the status) and skip this phase for the repo. Never fail silently.
+1. **Ensure labels:** `gh label create sentry --repo <owner>/<repo> --color 362D59 --description "Filed from a Sentry production error" 2>/dev/null || true` and `gh label create sentry-synced --repo <owner>/<repo> --color C5DEF5 --description "Close reason pushed to Sentry" 2>/dev/null || true` (`bug` already exists).
 2. **Resolve the project id:** `curl -sf -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://sentry.io/api/0/projects/neonpixels/<project>/" | jq -r .id`.
-3. **Fetch candidates** (unresolved, production, fatal/error, last 14 days):
+3. **Sync closed issues to Sentry** (runs even at the open ceiling). For each `gh issue list --repo <owner>/<repo> --label sentry --state closed --search "-label:sentry-synced" --json number,url,stateReason,body`, read the `sentry-issue-id` marker and update it:
+   ```bash
+   # stateReason COMPLETED
+   curl -sf -X PUT -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" -H "Content-Type: application/json" \
+     "https://sentry.io/api/0/organizations/neonpixels/issues/<id>/" \
+     -d '{"status":"resolved","statusDetails":{"inNextRelease":true}}'
+   # stateReason NOT_PLANNED
+   curl -sf -X PUT -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" -H "Content-Type: application/json" \
+     "https://sentry.io/api/0/organizations/neonpixels/issues/<id>/" \
+     -d '{"status":"ignored","substatus":"archived_until_escalating","statusDetails":{}}'
+   ```
+   On success: `gh issue edit <url> --add-label sentry-synced` and `gh issue comment <url> --body "Sentry <shortId>: <resolved in next release|archived until escalating>."`. On failure: Errors row, leave the label off so the next run retries. A `404` means the Sentry issue was deleted or merged: label it synced and comment that.
+4. **Fetch candidates** (unresolved, production, fatal/error, last 14 days):
    ```bash
    curl -sf -G -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://sentry.io/api/0/organizations/neonpixels/issues/" \
      --data-urlencode "project=<project-id>" --data-urlencode "environment=production" \
@@ -124,12 +145,12 @@ Steps per repo:
      --data-urlencode "statsPeriod=14d" --data-urlencode "sort=freq" --data-urlencode "limit=100"
    ```
    Re-sort locally: `level` fatal before error, then `userCount` desc, then `count` desc. Server-side errors (cron syncs) carry no user, so `userCount` is often 0 and `count` decides.
-4. **Dedupe against GitHub** (GitHub is the source of truth, no ledger). Load every `sentry` issue: `gh issue list --repo <owner>/<repo> --label sentry --state all --limit 1000 --json number,url,state,stateReason,closedAt,body`. Match on the body marker `<!-- sentry-issue-id: <id> -->`. For each candidate, in severity order:
+   **Ceiling:** count open issues (`gh issue list --repo <owner>/<repo> --label sentry --state open --json number --jq length`); at or above `SENTRY_OPEN_CEILING`, stop here and note it.
+   Dedupe against GitHub (GitHub is the source of truth, no ledger). Load every `sentry` issue: `gh issue list --repo <owner>/<repo> --label sentry --state all --limit 1000 --json number,url,state,closedAt,labels,body`. Match on the body marker `<!-- sentry-issue-id: <id> -->`. For each candidate, in severity order:
    - **No match:** file it (step 5).
    - **Open match:** skip.
-   - **Closed as not planned:** skip forever (the worker or human judged it noise).
-   - **Closed as completed, Sentry `lastSeen` after `closedAt`:** it regressed. Reopen with `gh issue reopen <url> --comment "Regressed in Sentry: last seen <lastSeen>, <count> events. <permalink>"`. Counts against the per-run cap.
-   - **Closed as completed, not seen since:** skip (the fix has not deployed yet, or Sentry has not auto-resolved).
+   - **Closed, `sentry-synced`:** Sentry brought it back (regressed or escalating), so it is real. Reopen: `gh issue edit <url> --remove-label sentry-synced`, then `gh issue reopen <url> --comment "Back in Sentry (<substatus>): last seen <lastSeen>, <count> events, release <release>. <permalink>"`. Counts against the per-run cap.
+   - **Closed, not yet `sentry-synced`:** skip; step 3 failed for it this run and will retry.
    Stop when the per-run allowance is spent.
 5. **Build the issue.** Fetch the latest event: `curl -sf -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://sentry.io/api/0/organizations/neonpixels/issues/<id>/events/latest/"`. From its `exception` entry take only each value's `type`, `value`, and the last 15 in-app frames (`filename`, `function`, `lineNo`): `jq '[.entries[] | select(.type=="exception") | .data.values[] | {type, value, frames: ((.stacktrace.frames // []) | map(select(.inApp)) | .[-15:])}]'`. Also take `release.version` (the deployed commit SHA). **Copy nothing else** from the event: no `request`, `user`, `contexts`, `tags`, `breadcrumbs`, or `extra`. They carry IPs, emails, cookies, and headers, and these repos may be public. Redact any email address or token-looking string in `value` to `[redacted]`.
    ```bash
@@ -155,7 +176,7 @@ Steps per repo:
    - `<filename>:<lineNo>` in `<function>`
 
    ### Notes for the worker
-   Production may lag `main`. Run `git log <release.version>..origin/main` to see what has landed since the deployed release, and verify the error still reproduces against `main` before fixing. If it is already fixed on `main`, close this as completed with a comment naming the fixing commit. If it is noise (bot traffic, third-party/network failure, rate limiting with no code cause), comment why and close as not planned; it will not be re-filed. Put `Fixes <shortId>` in the PR body alongside `Closes #<n>`.
+   Production may lag `main`. Run `git log <release.version>..origin/main` to see what has landed since the deployed release, and verify the error still reproduces against `main` before fixing. If it is already fixed on `main`, close this as completed with a comment naming the fixing commit. If it is noise (bot traffic, third-party/network failure, rate limiting with no code cause), comment why and close as not planned; the orchestrator archives it in Sentry and it only returns if it escalates. Close with the right reason (`gh issue close <n> --reason completed|"not planned"`): the reason decides what happens in Sentry. Put `Fixes <shortId>` in the PR body alongside `Closes #<n>`.
    ```
    Leave it **unassigned** (assigned to `grimicorn` = skipped by the Task Queue). Use plain hyphens, never em dashes, in anything you write into the issue.
 
@@ -191,6 +212,6 @@ Add an **Improvement Scan** section covering:
 - **Intake (daily):** per repo, how many new suggestions were harvested, split by `source` (`pr` vs `human`), with their origin PR URLs.
 - **Promotion (daily):** per repo, which closed digests were processed, how many promoted (with new issue URLs), how many dismissed.
 - **Generation (Wed & Sun):** per repo, the digest URL, or skip reason (`skipped — already generated today`, `skipped — open digest still awaiting triage`, or `no candidates cleared the bar`).
-- **Sentry intake (daily):** per repo, issues filed and reopened (URLs), or skip reason (`not a Sentry repo`, `open ceiling reached (<n>)`, `no unresolved production errors`, `auth failed`).
+- **Sentry intake (daily):** per repo, issues synced to Sentry (resolved / archived), issues filed and reopened (URLs), or skip reason (`not a Sentry repo`, `open ceiling reached (<n>)`, `no unresolved production errors`, `auth failed`).
 - **Held set:** per repo, how many candidates are parked (`status: held`) and carrying forward, with titles.
 
