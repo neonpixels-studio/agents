@@ -52,12 +52,13 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
    d. After each subagent, run the mid-run usage check; stop entirely (across all repos) if thresholds are hit.
 4. Monitor progress and surface blockers.
 5. Never directly edit code; delegate everything.
-6. After all repos: check CI status on every open agent PR (see CI Status Check) and include results in the final report.
+6. After all repos: check CI status on every open agent PR (see CI Status Check), run the review gate (see CI-Green Review Gate) to request `grimicorn`'s review on green PRs only, and include results in the final report.
 
 ## Task Queue
 
 Tasks come from GitHub Issues and PRs for the current repo. On every run, treat **all** open agent PRs as candidates for items 2–4 below (they apply to every PR, not just ones with new activity). Priority order:
 
+0. **Red `main`** (see CI-Green Review Gate): if the same check fails on `main` itself, open one dedicated fix PR for it, unless an open PR labeled `ci-fix` already exists. Exempt from the 10-PR cap, since it unblocks the held PRs.
 1. Issues labeled **Bug**
 2. Open agent PRs **behind main or with conflicts**: `git merge origin/main` into the branch, resolve conflicts. Detect with `gh pr view <PR-URL> --json mergeStateStatus` (`BEHIND` or `DIRTY` = action needed).
 3. Open agent PRs with **failing CI**: `gh pr checks <PR-URL>`; any failing check is a task.
@@ -92,7 +93,7 @@ Treat as a task when: not assigned to `grimicorn`, not `blocked`, and either fai
 
 - **Skip the independent code review** for these (the one documented exception). Worker still runs lint + tests locally and must get CI green — that's the whole bar.
 - **Cap/ordering:** authored by the bot, so they **don't count** toward the 10-PR cap and fixing one opens no new PR — proceed regardless of the cap, like other open-PR maintenance.
-- **Handoff when green:** re-request the human's review and leave it **unassigned** (do not re-assign to `grimicorn`). Use REST (agent token lacks `read:org`, so `gh pr edit --add-reviewer` fails): `gh api -X POST repos/<owner>/<repo>/pulls/<PR-NUMBER>/requested_reviewers -f "reviewers[]=grimicorn"`
+- **Handoff when green:** the review gate (see CI-Green Review Gate) re-requests the human's review once CI is green; leave the PR **unassigned** (do not re-assign to `grimicorn`). Workers do not request review themselves.
 - **Can't go green in 3 attempts:** apply the Retry Limit to the PR — add `blocked`, assign `grimicorn`, comment what decision is needed.
 
 ## Cross-Repo Dependencies
@@ -164,7 +165,7 @@ When complete:
 - Branch naming: agent/<short-task-slug>
 - Follow .github/PULL_REQUEST_TEMPLATE.md if it exists
 - Include `Closes #<issue-number>` in the PR body
-- Add <repo-owner> as a reviewer
+- Do NOT request a reviewer; the orchestrator does that once CI is green
 
 If you hit a blocker or need clarification:
 - Post a comment on the GitHub issue explaining the question/error
@@ -192,7 +193,7 @@ When complete: push; report a summary of what was fixed.
 PR: <PR URL>
 Feedback: <ALL review comments from humans and bots, via `gh api repos/<owner>/<repo>/pulls/<PR-NUMBER>/comments`>
 Address every comment; skip none. If a comment is unclear, make a reasonable call and note it in the PR.
-When complete: push. If any feedback came from `grimicorn`, re-request their review via REST: `gh api -X POST repos/<owner>/<repo>/pulls/<PR-NUMBER>/requested_reviewers -f "reviewers[]=grimicorn"`
+When complete: push. Do NOT re-request review; the orchestrator does that once CI is green. If any feedback came from `grimicorn`, say so in your report.
 ```
 
 **Dependabot PR** (check out the Dependabot branch; **code review skipped**):
@@ -204,7 +205,7 @@ This is a Dependabot bump. Get it green:
 - If behind/conflicting, merge origin/main and resolve, preserving the bump.
 - Run lint and tests locally; fix whatever the new version broke (adapt call sites, update legitimately-changed snapshots). Make the smallest change that makes CI honest — do not loosen a check to pass.
 - Do NOT run the independent code review.
-When complete: push; re-request the human's review and leave it unassigned (do NOT assign grimicorn): `gh api -X POST repos/<owner>/<repo>/pulls/<PR-NUMBER>/requested_reviewers -f "reviewers[]=grimicorn"`; post a short comment of what you fixed.
+When complete: push; do NOT request review or assign grimicorn (the orchestrator requests review once CI is green); post a short comment of what you fixed.
 If you cannot get CI green in 3 attempts (e.g. a breaking change needing a human decision): add `blocked`, assign grimicorn, comment what's needed.
 ```
 
@@ -234,137 +235,43 @@ If all 3 fail:
 
 If the task has no issue (PR-only maintenance), apply the same to the PR. The orchestrator skips any `blocked` PR/issue — a human triages and removes the label.
 
+## CI-Green Review Gate
+
+`grimicorn` is only requested as reviewer on a PR whose CI is fully green. A review request means "merge-ready pending your eyes", never "go fix this". **Only the orchestrator requests review**; workers never do (their prompts say so). Workers don't wait on CI either: they push and report, and the gate runs on the next pass.
+
+**Gate pass** (after the CI Status Check, every run, every open agent PR and every agent-fixed Dependabot PR that has no review request from `grimicorn` yet, plus any PR a worker just pushed to):
+
+1. `gh pr checks <PR-URL>` and `gh pr view <PR-URL> --json mergeStateStatus,reviewRequests,labels`.
+2. **All green, not `BEHIND`/`DIRTY`, not `blocked`:** request review, remove `ci-held` if present:
+   `gh api -X POST repos/<owner>/<repo>/pulls/<PR-NUMBER>/requested_reviewers -f "reviewers[]=grimicorn"` (REST, agent token lacks `read:org`).
+3. **Pending:** do nothing, don't wait. The next daily run picks it up.
+4. **Failing:** classify each failing check by comparing against the latest `main` run (`gh run list --repo <owner>/<repo> --branch main --limit 1`, then `gh run view`, or `gh api repos/<owner>/<repo>/commits/main/check-runs`):
+   - **Red only on the PR (PR-caused):** it is already a Task Queue item 3. The worker fixes it **on the PR branch**. No review request until green.
+   - **Red on `main` too (e.g. `dependency-audit`, advisory reds):** do **not** fix it in each PR. Fixing the same override in N branches produces N conflicting copies. Instead:
+     a. Add the `ci-held` label to the PR (create if missing: `gh label create ci-held --color D93F0B --description "Green CI is blocked by a failure on main; review not requested" 2>/dev/null || true`) and comment once naming the fix PR.
+     b. Ensure exactly one fix PR exists per root cause per repo: an open PR labeled `ci-fix` covering it. If none, queue it as Task Queue item 0. The fix PR targets `main`, has no `Closes`, label `ci-fix` (create if missing), and goes through this same gate.
+     c. Do not request review on held PRs. `grimicorn` merges the fix PR; held PRs then show `BEHIND`, Task Queue item 2 merges `main` in, CI re-runs, and the gate releases them on a later run.
+5. **Still red after the fix lands, or the fix can't go green in 3 attempts:** Retry Limit applies (`blocked`, assign `grimicorn`, comment what's needed).
+
+Caveats:
+- A review already requested before this gate existed is left alone; the gate never withdraws a request.
+- Latency is up to one daily run: a PR pushed today is usually pending, so review is requested tomorrow.
+- A PR that is red for a cause only a human can resolve (missing secret, external service) goes straight to `blocked`, not `ci-held`.
+
 ## Design References in Issues
 
 When an issue has a **Reference HTML** section (see `html-issue.md`), treat the HTML as a visual/structural spec, not code to copy verbatim. Implement it with the project's existing components, composables, and conventions — match layout, spacing, and interaction intent, translated into the codebase's patterns.
 
 ## Weekly Improvement Scan
 
-Weekly, the orchestrator scans each repo for improvements/missing functionality that **don't already have an issue** and surfaces them as one **digest issue** per repo for human triage. This generates candidate work; it builds nothing.
+Full spec (ledger format, Phases 0-2, generator/ranker prompts, digest format, scan reporting) lives in `docs/improvement-scan.md`. **Read that file in full before starting the scan pass** (Responsibilities step 2); do not run any scan phase from memory.
 
-Candidates come from two sources: the **generator** (a fresh codebase scan, Wed/Sun) and **suggestion intake** — follow-up notes the agent leaves on PRs plus `/suggest` comments the human leaves on PRs, harvested **daily** into the ledger so they're queued and ready by the next generation day.
-
-**Three cadences:**
-- **Suggestion intake — daily** (Phase 0). Harvest PR-sourced and human-sourced suggestions into the ledger as pre-vetted `held` candidates.
-- **Digest promotion — daily** (Phase 1). Triggered by the human closing a digest. An **open** digest = not triaged yet; leave it alone.
-- **Digest generation — Wednesdays and Sundays only** (Phase 2). Runs in the scan pass, before any task work, on those days. Pulls the whole ledger pool (generator output + carried `held`, including intake) through the ranker.
-
-Generation guards:
-- **At most once per generation day:** skip if a digest was already created today — `gh issue list --repo <owner>/<repo> --label improvement-digest --state all --search "created:$(date +%Y-%m-%d)" --json number`.
-- **No pile-up:** skip if an **open** `improvement-digest` issue already exists (last week's still awaiting triage); note it.
-- Subject to Usage Limits — skip if a stop threshold was hit.
-
-### The ledger
-
-Persistent memory of every candidate ever proposed, so the scan never re-proposes something tracked/promoted/rejected. Without it you get the same suggestions weekly.
-
-- **Location:** `/Volumes/External/Development/agents/.ledger/<repo-name>.jsonl`, one file per repo (`.ledger/` is gitignored).
-- **Written only by the orchestrator.** Subagents never touch it. Generator/ranker subagents receive ledger context in prompts and return data; the orchestrator does all reads/writes.
-- **Append-only JSONL, latest record per `id` wins.** To change status, append a new record with the same `id` — never rewrite the file.
-- **Record:**
-  ```json
-  {"id": "<repo-short>-<YYYYMMDD>-<n>", "date": "<YYYY-MM-DD>", "title": "...", "summary": "...", "rationale": "...", "suggested_label": "P2", "effort": "M", "status": "proposed", "source": "scan", "origin_pr_url": null, "digest_issue_url": "...", "promoted_issue_url": null, "notes": ""}
-  ```
-  `status` ∈ `proposed | promoted | rejected | held`. `source` ∈ `scan | pr | human` (default `scan`; `pr`/`human` come from Phase 0 intake, with `origin_pr_url` set). `id` e.g. `basin-20260724-2`.
-- **`held`:** a strong candidate the ranker keeps but cuts only for the 5-item cap, a root-cause/larger-than-one-issue item worth remembering, **or a freshly-intaken PR/human suggestion awaiting its first ranking**. Not in this week's digest; carried forward and re-injected into the ranker pool every run as **pre-vetted** (`"carried": true`) until surfaced (→ `proposed`), promoted, or dropped. It must clear the same bar as a survivor — held is not a filler bucket (filler is `rejected`, dropped forever). A held item keeps its `id` for life; append a new record only when status actually changes.
-
-### Phase 0 — Suggestion intake (daily)
-
-Runs every run per repo, before promotion. Harvests two suggestion sources into the ledger as `held` candidates so the next generation ranks them alongside fresh scan output. Cheap (GitHub reads + ledger appends, no subagents) — runs even when the PR cap is hit and on non-generation days.
-
-Scope the scan to bound cost: **open PRs plus PRs merged/closed in the last 7 days.**
-
-1. **Agent-sourced (PR body blocks).** Find PRs carrying follow-ups: `gh pr list --repo <owner>/<repo> --state all --label has-suggestions --search "updated:>=<7-days-ago>" --json number,url,body`. For each, parse the `<!-- suggestions:start -->`…`<!-- suggestions:end -->` block; each bullet is one candidate. Derive `id` = `<repo-short>-pr<NUM>-<n>` (bullet index).
-2. **Human-sourced (`/suggest` comments).** For each in-scope PR, read conversation comments: `gh api repos/<owner>/<repo>/issues/<PR-NUMBER>/comments --jq '.[] | {id, user: .user.login, body}'`. Any comment whose body has a line beginning `/suggest ` is a candidate — the text after `/suggest ` is the suggestion (first sentence = `title`/`summary`; infer `suggested_label`/`effort` if the human didn't state them). Derive `id` = `<repo-short>-pr<NUM>-h<comment-id>` (the GitHub comment id makes this idempotent and stable).
-3. **Dedupe by `id` against the ledger.** Skip any `id` that already has a record — never re-intake. This is the whole idempotency guard (no label juggling needed).
-4. **Append a ledger record** for each new candidate: `status: held`, `carried: true`, `source: pr` (step 1) or `human` (step 2), `origin_pr_url` set, `date` today. Held items already carry into the ranker pool, so nothing else is needed to feed generation.
-5. **Acknowledge human suggestions** so the human sees them land: on each newly-intaken `/suggest` comment's PR, `gh pr comment <PR-URL> --body "📥 Recorded \`<title>\` to the improvement ledger — it'll compete in the next digest (added to suggestions)."` Skip the ack for agent-sourced blocks (no human waiting on them).
-
-### Phase 1 — Digest promotion (daily)
-
-Runs every run as step 2b, per repo. **The human closing a digest is the trigger.**
-
-1. List **closed** digests not yet processed: `gh issue list --repo <owner>/<repo> --label improvement-digest --state closed --json number,body,url,labels`; skip any with `digest-processed`. Never touch **open** digests.
-2. Ensure the label exists: `gh label create digest-processed --repo <owner>/<repo> --color 0E8A16 --description "Improvement digest whose checks have been promoted" 2>/dev/null || true`.
-3. Parse each digest's checklist: `- [x] \`<id>\` ...` = checked (wanted); `- [ ] \`<id>\` ...` = unchecked (dismissed). Nothing checked is a valid "dismiss all".
-4. For each **checked** item: look up its ledger record by `id`, create a real issue — title from `title`; body = `rationale` + acceptance criteria + `Promoted from improvement digest <digest-url>`; label = `suggested_label`. **Leave it unassigned** (do not assign `grimicorn`). Append a ledger record with `status: promoted` and `promoted_issue_url` set.
-5. For each **unchecked** item: append a record with `status: rejected` (won't be re-proposed).
-6. Mark the digest done (never reprocessed): `gh issue edit <digest-url> --add-label digest-processed` then `gh issue comment <digest-url> --body "Promoted: <urls>. Dismissed: <n> unchecked."` Leave it **closed**. The `digest-processed` label is the idempotency guard.
-
-### Phase 2 — Generate a new digest (Wednesdays and Sundays only)
-
-Per repo, independent of promotion.
-
-0. Skip if either guard trips (already generated today, or an open digest exists); note the reason.
-1. Read the ledger and open issue titles (the "already known" set) plus the current **held** set (every `id` whose latest record is `held`) — held items carry forward and re-enter ranking. This held set now includes Phase 0 intake (`source: pr | human`); those enter the ranker pool exactly like any carried candidate.
-2. Spawn a **generator subagent on Sonnet** (read-only; no push/PR/issue) with the prompt below. If the repo is a cross-repo dependent, add the read-only reference-clone instruction and tell it to ground CLI/consumer candidates in the dependency's contract. Held titles are in the exclusion list, so the generator won't re-derive them — they reach the ranker via the orchestrator.
-3. Feed the ranker **both** the generator's fresh candidates and the carried-forward held items (each tagged `"carried": true`). Spawn a **ranker subagent on Opus** (independent). It keeps **at most 5** survivors and returns a capped `held` list.
-4. Persist to the ledger:
-   - Each **survivor:** fresh → new `id`; carried → reuse `id`. Append a `proposed` record. Include in the digest.
-   - Each ranker-returned **held:** fresh → new `id` + `held` record; already held → leave it (no new record).
-   - Any previously-held `id` in **neither** list → append a `rejected` record so it stops carrying forward.
-5. Post one digest per repo (format below) with only the survivors. No survivors → post nothing, note "no candidates cleared the bar" (report held count).
-6. Ensure the label exists: `gh label create improvement-digest --repo <owner>/<repo> --color BFD4F2 --description "Weekly improvement candidates for human triage" 2>/dev/null || true`.
-
-**Generator subagent prompt:**
-```
-You are a subagent analyzing the <owner>/<repo-name> repository for improvement candidates. READ-ONLY. Do not push, open a PR, or create issues.
-Clone <repo-url> into /tmp/ as <repo-name>-improvement-scan/ (shallow is fine).
-Study the codebase, README, and existing open + recently-closed issues (`gh issue list` and `--state closed`) to understand the project and where it's weak. Look for: missing functionality implied by the project's purpose, obvious gaps, fragile/untested areas, reliability and DX improvements, small high-leverage features. Ground every candidate in something you actually saw — no generic best-practice filler.
-Do NOT propose anything overlapping these already-tracked/decided items:
-<open issue titles + every ledger title with its status>
-Return 3–8 candidates as a JSON array, best first. Each: {title, summary (one sentence), rationale (why it adds value, tied to a specific file/area), suggested_label (Bug|P1|P2|P3|P4), effort (S|M|L), evidence (path/area you saw)}.
-In every text field use a plain hyphen (`-`); never use an em dash (`—`).
-Delete the clone when done. Your final message must be ONLY the JSON array.
-```
-
-**Ranker subagent prompt (Opus):**
-```
-You are an independent reviewer scoring improvement candidates for <owner>/<repo-name>. You did NOT generate these. Be harsh: keep only candidates a busy maintainer would genuinely act on; reject filler.
-Candidates (JSON):
-<fresh generator output + carried-forward held items>
-Some are tagged `"carried": true` — pre-vetted (a prior run kept them but cut for space). Treat them as clearing the bar; prefer them on ties against a fresh candidate of similar value; do not re-reject a carried item unless now clearly obsolete (already done or superseded).
-Items with `"source": "pr"` are agent-authored follow-ups grounded in real code changes; items with `"source": "human"` are suggestions the maintainer explicitly asked for — never hard-reject a `source: human` item as filler; if it can't make the top 5, put it in `held` so it carries forward (only drop it if already done or obsolete).
-Reject anything that is: generic best-practice noise not grounded in this codebase, speculative, already effectively done, cosmetic with no payoff, or so large it's an epic not a single issue. Prefer concrete, bounded, high-leverage improvements.
-Return one JSON object with two arrays:
-- `survivors`: at most 5, best first — this week's digest.
-- `held`: at most 3 — strong candidates cut only for the 5-item cap, OR root-cause/larger-than-one-issue items worth remembering. NOT filler (filler goes in neither array). A carried item you still rate highly but that lost the top 5 belongs here.
-Every returned item keeps its original fields plus a one-line `justification`, and preserves its `id` and `carried` flag if it had them. Empty array if nothing clears the bar. Output ONLY the JSON object.
-```
-
-### Digest issue format
-
-- **Title:** `Improvement candidates - <repo-name> - <Month Dth, YYYY>`
-- **Label:** `improvement-digest`
-- **Assignee:** `grimicorn` (lands it in the human's queue; the "skip grimicorn-assigned" rule keeps the daily loop from treating it as a task)
-- **Body:**
-  ```
-  Automated weekly scan. Check the boxes for the improvements you want turned into tracked issues, then **close this issue** when you're done triaging — closing it is the go signal. On its next run the agent creates the checked items as real issues (unassigned, labelled by priority) and leaves this digest closed; unchecked items are dismissed and won't be re-proposed. While this stays open nothing happens, so take as long as you need.
-
-  - [ ] `<id>` **<title>** - <summary> _(suggested: <label>, effort: <S|M|L>)_
-  - [ ] `<id>` **<title>** - <summary> _(suggested: <label>, effort: <S|M|L>)_
-
-  <details><summary>Rationale</summary>
-
-  - `<id>`: <rationale>
-  - `<id>`: <rationale>
-
-  </details>
-  ```
-
-For a survivor with `source: pr | human`, append its origin to the item's meta so you recognize suggestions you or the agent raised, e.g. `_(suggested: P2, effort: M, from PR #123)_`.
-
-The digest's per-item priority label is a suggestion only; it's applied to the promoted issue at promotion time (Phase 1), not to the digest.
-
-Use a plain hyphen (`-`), never an em dash (`—`/`—`), everywhere in the digest — separators and any model-authored `title`/`summary`/`rationale` text. If a candidate's text arrives with an em dash, rewrite it to a hyphen before posting.
-
-### Reporting the scan
-
-Add an **Improvement Scan** section covering:
-- **Intake (daily):** per repo, how many new suggestions were harvested, split by `source` (`pr` vs `human`), with their origin PR URLs.
-- **Promotion (daily):** per repo, which closed digests were processed, how many promoted (with new issue URLs), how many dismissed.
-- **Generation (Wed & Sun):** per repo, the digest URL, or skip reason (`skipped — already generated today`, `skipped — open digest still awaiting triage`, or `no candidates cleared the bar`).
-- **Held set:** per repo, how many candidates are parked (`status: held`) and carrying forward, with titles.
+Summary only:
+- **Phase 0, intake (daily):** harvest PR `has-suggestions` blocks and `/suggest` comments into the ledger as `held`.
+- **Phase 1, promotion (daily):** a human-closed, unprocessed `improvement-digest` becomes issues (checked) or `rejected` ledger entries (unchecked).
+- **Phase 2, generation (Wed/Sun only):** generator (Sonnet) + ranker (Opus) produce one digest per repo; skip if one was created today or one is still open.
+- Ledger: `.ledger/<repo-name>.jsonl`, orchestrator-written only, append-only.
+- Include an **Improvement Scan** section in the final report (intake, promotion, generation, held set).
 
 ## Code Standards
 
@@ -387,7 +294,7 @@ Each round: read output, apply fixes, regenerate the diff, re-run. Up to 3 round
 - **Unresolved:** anything open after 3 rounds.
 - **Skipped:** findings intentionally not actioned (false positive, conflicts with conventions, out of scope), each with a brief reason.
 
-Once the loop ends, request the human's review so the PR lands in their queue (REST — agent token lacks `read:org`): `gh api -X POST repos/<owner>/<repo>/pulls/<PR-NUMBER>/requested_reviewers -f "reviewers[]=grimicorn"`. That request is the "ready for review" signal; the human is the final arbiter.
+Once the loop ends, push and open the PR but do **not** request review. The orchestrator requests it once CI is green (see CI-Green Review Gate). That request is the "ready for review" signal; the human is the final arbiter.
 
 ## Linting
 
@@ -484,7 +391,7 @@ After all repos, fetch CI status for every open agent PR with `gh pr checks <PR-
 - **Failing:** one or more failed (include check names)
 - **Pending:** still running
 
-Include in the final report. Don't wait for pending — report as pending and let the human decide.
+Include in the final report. Don't wait for pending; report as pending and let the next run's gate pick it up. Passing PRs get their review requested by the CI-Green Review Gate.
 
 ## Reporting
 
@@ -494,6 +401,7 @@ After all repos, summarize grouped by repo:
 - Tasks with unrecoverable errors (and what they are)
 - Tasks/repos skipped and why (including 10-PR cap hits)
 - CI status for all open agent PRs: passing, failing (with check names), or pending
+- Review gate: PRs newly review-requested, PRs held as `ci-held` (with the fix PR each waits on), and any `ci-fix` PRs opened
 - On generation days (Wed/Sun), the Improvement Scan results (digest URLs per repo; items promoted/dismissed from prior digests)
 
 ## What You Must Not Do
