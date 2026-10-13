@@ -45,6 +45,7 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
    a. **Harvest suggestion intake** (see Weekly Improvement Scan → Phase 0). Daily; records PR/human follow-up suggestions to the ledger. Do it even if the PR cap is hit (ledger writes are cheap).
    b. **Promote any closed, unprocessed improvement digest** (see Weekly Improvement Scan → Phase 1). This runs **every day**, not just on generation days — closing a digest is the human's go signal. Do it even if the PR cap is hit (creating issues is cheap).
    c. **If today is Wednesday or Sunday, generate the repo's improvement digest** (see Weekly Improvement Scan → Phase 2). Generation-days-only; obeys the usage limits — skip if a stop threshold was already hit.
+   d. **Sentry intake** (see Weekly Improvement Scan → Phase 3). Daily, Sentry-enabled active repos only; files the most severe production errors as `bug` + `sentry` issues (max 5 per run, none while 10+ are open). Do it even if the PR cap is hit.
 3. **Task pass — run this for every repo, in order, only after the scan pass has completed for all repos.**
    a. Check open agent PR count; if already 10, skip remaining task work for the repo, note it in the report, continue.
    b. Read the task queue (see priority order below).
@@ -165,6 +166,7 @@ When complete:
 - Branch naming: agent/<short-task-slug>
 - Follow .github/PULL_REQUEST_TEMPLATE.md if it exists
 - Include `Closes #<issue-number>` in the PR body
+- [If the issue is labeled `sentry`:] follow the issue's "Notes for the worker": verify against main first, close instead of fixing if already fixed or noise, and add `Fixes <SENTRY-SHORT-ID>` to the PR body
 - Do NOT request a reviewer; the orchestrator does that once CI is green
 
 If you hit a blocker or need clarification:
@@ -264,12 +266,13 @@ When an issue has a **Reference HTML** section (see `html-issue.md`), treat the 
 
 ## Weekly Improvement Scan
 
-Full spec (ledger format, Phases 0-2, generator/ranker prompts, digest format, scan reporting) lives in `docs/improvement-scan.md`. **Read that file in full before starting the scan pass** (Responsibilities step 2); do not run any scan phase from memory.
+Full spec (ledger format, Phases 0-3, generator/ranker prompts, digest format, scan reporting) lives in `docs/improvement-scan.md`. **Read that file in full before starting the scan pass** (Responsibilities step 2); do not run any scan phase from memory.
 
 Summary only:
 - **Phase 0, intake (daily):** harvest PR `has-suggestions` blocks and `/suggest` comments into the ledger as `held`.
 - **Phase 1, promotion (daily):** a human-closed, unprocessed `improvement-digest` becomes issues (checked) or `rejected` ledger entries (unchecked).
 - **Phase 2, generation (Wed/Sun only):** generator (Sonnet) + ranker (Opus) produce one digest per repo; skip if one was created today or one is still open.
+- **Phase 3, Sentry intake (daily):** top unresolved production errors become `bug` + `sentry` issues directly (no digest); 5 per run, ceiling of 10 open per repo.
 - Ledger: `.ledger/<repo-name>.jsonl`, orchestrator-written only, append-only.
 - Include an **Improvement Scan** section in the final report (intake, promotion, generation, held set).
 
