@@ -10,15 +10,14 @@ Process these in order on every run. Derive owner/repo from each URL (`https://g
 2. `https://github.com/neonpixels-studio/grimicorn`
 3. `https://github.com/neonpixels-studio/danholloran`
 4. `https://github.com/neonpixels-studio/neonpixels`
+5. `https://github.com/neonpixels-studio/markpost`
+6. `https://github.com/neonpixels-studio/markpost-cli`
+7. `https://github.com/neonpixels-studio/basin`
+8. `https://github.com/neonpixels-studio/farflung`
 
 ### Disabled (do not process)
 
-Paused for now. Re-add to the active list above to resume. Their ledgers, env keys, and open PRs are untouched.
-
-- `https://github.com/neonpixels-studio/markpost`
-- `https://github.com/neonpixels-studio/markpost-cli`
-- `https://github.com/neonpixels-studio/basin`
-- `https://github.com/neonpixels-studio/farflung`
+None. To pause a repo, move its URL here from the active list above; its ledger, env keys, and open PRs stay untouched while paused.
 
 ## Workspace Structure
 
@@ -44,8 +43,10 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
 2. **Scan pass — run this for every repo, in order, before any task work.** These phases are cheap (GitHub reads plus at most two generator/ranker subagents) and high-value, so they go first: a run that later hits a usage stop during the task pass has already recorded every suggestion, promoted every closed digest, and posted every generated digest.
    a. **Harvest suggestion intake** (see Weekly Improvement Scan → Phase 0). Daily; records PR/human follow-up suggestions to the ledger. Do it even if the PR cap is hit (ledger writes are cheap).
    b. **Promote any closed, unprocessed improvement digest** (see Weekly Improvement Scan → Phase 1). This runs **every day**, not just on generation days — closing a digest is the human's go signal. Do it even if the PR cap is hit (creating issues is cheap).
-   c. **If today is Wednesday or Sunday, generate the repo's improvement digest** (see Weekly Improvement Scan → Phase 2). Generation-days-only; obeys the usage limits — skip if a stop threshold was already hit.
-   d. **Sentry intake** (see Weekly Improvement Scan → Phase 3). Daily, Sentry-enabled active repos only; files the most severe production errors as `bug` + `sentry` issues (max 5 per run, none while 10+ are open) and pushes close reasons back to Sentry. Do it even if the PR cap is hit.
+   c. **Feedback triage** (see Weekly Improvement Scan → Phase 4). Daily, runs **before generation** so new feedback feeds the same day's digest. Reviews user-submitted `feedback` issues: auto-converts confident defects to `bug`, intakes the rest to the ledger as `source: feedback` (left on the `feedback` hold label), and closes duplicates. Cheap except the classifier subagent, which obeys the usage limits — skip classification if a stop threshold was hit (ledger/label writes for already-classified items still run).
+   d. **If today is Wednesday or Sunday, generate the repo's improvement digest** (see Weekly Improvement Scan → Phase 2). Generation-days-only; obeys the usage limits — skip if a stop threshold was already hit.
+   e. **Sentry intake** (see Weekly Improvement Scan → Phase 3). Daily, Sentry-enabled active repos only; files the most severe production errors as `bug` + `sentry` issues (max 5 per run, none while 10+ are open) and pushes close reasons back to Sentry. Do it even if the PR cap is hit.
+   f. **If today is Sunday, site-scan intake** (see Weekly Improvement Scan → Phase 5). Sundays only, scan-mapped active repos only; reads the WCAG/SEO scan files from the Obsidian vault and files one aggregated WCAG and one aggregated SEO issue per site directly (priority mapped from finding Level). No subagent; do it even if the PR cap is hit.
 3. **Task pass — run this for every repo, in order, only after the scan pass has completed for all repos.**
    a. Check open agent PR count; if already 10, skip remaining task work for the repo, note it in the report, continue.
    b. Read the task queue (see priority order below).
@@ -75,6 +76,7 @@ Rules:
 - Skip any issue **or Dependabot PR** assigned to `grimicorn` (note it in the report). Issues assigned to `grimicorn` are reserved for human triage; Dependabot PRs assigned to `grimicorn` are still in human review (see Dependabot PRs).
 - If an issue has a **Dependencies** section, skip it (and note it) if any listed issue is still open.
 - Skip any PR/issue labeled `blocked` — a human will clear it.
+- Skip any issue labeled `feedback` — it is an untriaged user-submitted report held for Feedback Triage (see Weekly Improvement Scan → Phase 4). Triage removes the label (converting to `bug`, or relabeling by priority on promotion) before it is ever workable.
 
 ## Dependabot PRs
 
@@ -266,15 +268,17 @@ When an issue has a **Reference HTML** section (see `html-issue.md`), treat the 
 
 ## Weekly Improvement Scan
 
-Full spec (ledger format, Phases 0-3, generator/ranker prompts, digest format, scan reporting) lives in `docs/improvement-scan.md`. **Read that file in full before starting the scan pass** (Responsibilities step 2); do not run any scan phase from memory.
+Full spec (ledger format, Phases 0-5, generator/ranker prompts, digest format, scan reporting) lives in `docs/improvement-scan.md`. **Read that file in full before starting the scan pass** (Responsibilities step 2); do not run any scan phase from memory.
 
 Summary only:
 - **Phase 0, intake (daily):** harvest PR `has-suggestions` blocks and `/suggest` comments into the ledger as `held`.
-- **Phase 1, promotion (daily):** a human-closed, unprocessed `improvement-digest` becomes issues (checked) or `rejected` ledger entries (unchecked).
+- **Phase 1, promotion (daily):** a human-closed, unprocessed `improvement-digest` becomes issues (checked) or `rejected` ledger entries (unchecked). For `source: feedback` survivors, promotion **relabels the existing feedback issue in place** (no new issue).
 - **Phase 2, generation (Wed/Sun only):** generator (Sonnet) + ranker (Opus) produce one digest per repo; skip if one was created today or one is still open.
 - **Phase 3, Sentry intake (daily):** top unresolved production errors become `bug` + `sentry` issues directly (no digest); 5 per run, ceiling of 10 open per repo. Closed issues sync back to Sentry: completed = resolved in next release, not planned = archived until escalating; either returning reopens the GitHub issue.
+- **Phase 4, feedback triage (daily):** classify user `feedback` issues (fresh Sonnet subagent) — confident defects auto-convert to `bug`; the rest intake to the ledger as `source: feedback` (kept on the `feedback` hold label) to ride the digest like any suggestion; duplicates close into the earliest. Runs before Phase 2.
+- **Phase 5, site-scan intake (Sun only):** read the WCAG/SEO scan files from the Obsidian vault and file one aggregated WCAG and one aggregated SEO issue per scan-mapped site directly, priority mapped from finding Level. One persistent open issue per (site, scanner), rebuilt each Sunday.
 - Ledger: `.ledger/<repo-name>.jsonl`, orchestrator-written only, append-only.
-- Include an **Improvement Scan** section in the final report (intake, promotion, generation, held set).
+- Include an **Improvement Scan** section in the final report (intake, promotion, feedback triage, generation, Sentry, site scans, held set).
 
 ## Code Standards
 

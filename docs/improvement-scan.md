@@ -2,12 +2,17 @@
 
 Weekly, the orchestrator scans each repo for improvements/missing functionality that **don't already have an issue** and surfaces them as one **digest issue** per repo for human triage. This generates candidate work; it builds nothing.
 
-Candidates come from two sources: the **generator** (a fresh codebase scan, Wed/Sun) and **suggestion intake** — follow-up notes the agent leaves on PRs plus `/suggest` comments the human leaves on PRs, harvested **daily** into the ledger so they're queued and ready by the next generation day.
+Candidates come from three sources: the **generator** (a fresh codebase scan, Wed/Sun), **suggestion intake** — follow-up notes the agent leaves on PRs plus `/suggest` comments the human leaves on PRs — and **user feedback** routed in through the dashboard app. All are harvested **daily** into the ledger so they're queued and ready by the next generation day.
 
-**Three cadences:**
+Two further phases file issues **directly** (no digest): Sentry intake (Phase 3) and site-scan intake (Phase 5). Feedback triage (Phase 4) does both — confident defects go straight to `bug`, the rest join the digest pool.
+
+**Cadences:**
 - **Suggestion intake — daily** (Phase 0). Harvest PR-sourced and human-sourced suggestions into the ledger as pre-vetted `held` candidates.
 - **Digest promotion — daily** (Phase 1). Triggered by the human closing a digest. An **open** digest = not triaged yet; leave it alone.
-- **Digest generation — Wednesdays and Sundays only** (Phase 2). Runs in the scan pass, before any task work, on those days. Pulls the whole ledger pool (generator output + carried `held`, including intake) through the ranker.
+- **Digest generation — Wednesdays and Sundays only** (Phase 2). Runs in the scan pass, before any task work, on those days. Pulls the whole ledger pool (generator output + carried `held`, including intake and feedback) through the ranker.
+- **Sentry intake — daily** (Phase 3). Direct-file; see its section.
+- **Feedback triage — daily** (Phase 4). Runs before Phase 2 so new feedback rides the same day's digest; confident defects direct-file as `bug`.
+- **Site-scan intake — Sundays only** (Phase 5). Direct-file WCAG/SEO issues from the Obsidian vault.
 
 Generation guards:
 - **At most once per generation day:** skip if a digest was already created today — `gh issue list --repo <owner>/<repo> --label improvement-digest --state all --search "created:$(date +%Y-%m-%d)" --json number`.
@@ -23,9 +28,9 @@ Persistent memory of every candidate ever proposed, so the scan never re-propose
 - **Append-only JSONL, latest record per `id` wins.** To change status, append a new record with the same `id` — never rewrite the file.
 - **Record:**
   ```json
-  {"id": "<repo-short>-<YYYYMMDD>-<n>", "date": "<YYYY-MM-DD>", "title": "...", "summary": "...", "rationale": "...", "suggested_label": "P2", "effort": "M", "status": "proposed", "source": "scan", "origin_pr_url": null, "digest_issue_url": "...", "promoted_issue_url": null, "notes": ""}
+  {"id": "<repo-short>-<YYYYMMDD>-<n>", "date": "<YYYY-MM-DD>", "title": "...", "summary": "...", "rationale": "...", "suggested_label": "P2", "effort": "M", "status": "proposed", "source": "scan", "origin_pr_url": null, "origin_issue_url": null, "digest_issue_url": "...", "promoted_issue_url": null, "notes": ""}
   ```
-  `status` ∈ `proposed | promoted | rejected | held`. `source` ∈ `scan | pr | human` (default `scan`; `pr`/`human` come from Phase 0 intake, with `origin_pr_url` set). `id` e.g. `basin-20260724-2`.
+  `status` ∈ `proposed | promoted | rejected | held`. `source` ∈ `scan | pr | human | feedback` (default `scan`; `pr`/`human` come from Phase 0 intake with `origin_pr_url` set; `feedback` comes from Phase 4 with `origin_issue_url` set — the user-submitted issue it rides). `id` e.g. `basin-20260724-2` (scan) or `basin-fb127` (feedback, from issue #127).
 - **`held`:** a strong candidate the ranker keeps but cuts only for the 5-item cap, a root-cause/larger-than-one-issue item worth remembering, **or a freshly-intaken PR/human suggestion awaiting its first ranking**. Not in this week's digest; carried forward and re-injected into the ranker pool every run as **pre-vetted** (`"carried": true`) until surfaced (→ `proposed`), promoted, or dropped. It must clear the same bar as a survivor — held is not a filler bucket (filler is `rejected`, dropped forever). A held item keeps its `id` for life; append a new record only when status actually changes.
 
 ### Phase 0 — Suggestion intake (daily)
@@ -47,8 +52,10 @@ Runs every run as step 2b, per repo. **The human closing a digest is the trigger
 1. List **closed** digests not yet processed: `gh issue list --repo <owner>/<repo> --label improvement-digest --state closed --json number,body,url,labels`; skip any with `digest-processed`. Never touch **open** digests.
 2. Ensure the label exists: `gh label create digest-processed --repo <owner>/<repo> --color 0E8A16 --description "Improvement digest whose checks have been promoted" 2>/dev/null || true`.
 3. Parse each digest's checklist: `- [x] \`<id>\` ...` = checked (wanted); `- [ ] \`<id>\` ...` = unchecked (dismissed). Nothing checked is a valid "dismiss all".
-4. For each **checked** item: look up its ledger record by `id`, create a real issue — title from `title`; body = `rationale` + acceptance criteria + `Promoted from improvement digest <digest-url>`; label = `suggested_label`. **Leave it unassigned** (do not assign `grimicorn`). Append a ledger record with `status: promoted` and `promoted_issue_url` set.
-5. For each **unchecked** item: append a record with `status: rejected` (won't be re-proposed).
+4. For each **checked** item: look up its ledger record by `id`.
+   - **`source: feedback`** (has `origin_issue_url`): the user's issue already exists — **relabel it in place**, don't create a new one. `gh issue edit <origin_issue_url> --remove-label feedback --add-label <suggested_label>` and `gh issue comment <origin_issue_url> --body "Prioritized from improvement digest <digest-url> (<suggested_label>)."` Append a `promoted` record with `promoted_issue_url = origin_issue_url`.
+   - **Any other source:** create a real issue — title from `title`; body = `rationale` + acceptance criteria + `Promoted from improvement digest <digest-url>`; label = `suggested_label`. **Leave it unassigned** (do not assign `grimicorn`). Append a `promoted` record with `promoted_issue_url` set.
+5. For each **unchecked** item: append a record with `status: rejected` (won't be re-proposed). **If `source: feedback`:** the user's report was reviewed and declined, so close its origin issue — `gh issue close <origin_issue_url> --reason "not planned" --comment "Reviewed in the improvement digest and not planned. Reopen if you disagree."` (removes it from the `feedback` hold queue).
 6. Mark the digest done (never reprocessed): `gh issue edit <digest-url> --add-label digest-processed` then `gh issue comment <digest-url> --body "Promoted: <urls>. Dismissed: <n> unchecked."` Leave it **closed**. The `digest-processed` label is the idempotency guard.
 
 ### Phase 2 — Generate a new digest (Wednesdays and Sundays only)
@@ -84,7 +91,7 @@ You are an independent reviewer scoring improvement candidates for <owner>/<repo
 Candidates (JSON):
 <fresh generator output + carried-forward held items>
 Some are tagged `"carried": true` — pre-vetted (a prior run kept them but cut for space). Treat them as clearing the bar; prefer them on ties against a fresh candidate of similar value; do not re-reject a carried item unless now clearly obsolete (already done or superseded).
-Items with `"source": "pr"` are agent-authored follow-ups grounded in real code changes; items with `"source": "human"` are suggestions the maintainer explicitly asked for — never hard-reject a `source: human` item as filler; if it can't make the top 5, put it in `held` so it carries forward (only drop it if already done or obsolete).
+Items with `"source": "pr"` are agent-authored follow-ups grounded in real code changes; items with `"source": "human"` are suggestions the maintainer explicitly asked for; items with `"source": "feedback"` are reports submitted by real end users of the product — never hard-reject a `source: human` or `source: feedback` item as filler; if it can't make the top 5, put it in `held` so it carries forward (only drop it if already done or obsolete).
 Reject anything that is: generic best-practice noise not grounded in this codebase, speculative, already effectively done, cosmetic with no payoff, or so large it's an epic not a single issue. Prefer concrete, bounded, high-leverage improvements.
 Return one JSON object with two arrays:
 - `survivors`: at most 5, best first — this week's digest.
@@ -180,7 +187,94 @@ Steps per repo:
    ```
    Leave it **unassigned** (assigned to `grimicorn` = skipped by the Task Queue). Use plain hyphens, never em dashes, in anything you write into the issue.
 
-### Digest issue format
+### Phase 4 - Feedback triage (daily)
+
+Runs every run per active repo, in the scan pass **before Phase 2 generation** so newly-intaken feedback rides the same day's digest. End users submit feedback through the dashboard app, which files a GitHub issue in the relevant project repo labeled `feedback`. The Task Queue skips `feedback` issues (a hold, like `blocked`), so nothing is worked until this phase triages it. Three outcomes: confident defect → `bug` (worked immediately, no human gate); everything else → ledger `held` candidate ranked like any suggestion (stays on `feedback` until promoted); duplicate → closed into the earliest.
+
+Cheap (GitHub reads + label/ledger writes) **except** the one classifier subagent, which obeys the Usage Limits — if a stop threshold was hit, skip the subagent this run (the issues keep `feedback` and get picked up next run); the cheap steps for already-classified items still run.
+
+Steps per repo:
+
+1. **Ensure the label exists** (the dashboard creates it, but be defensive): `gh label create feedback --repo <owner>/<repo> --color D4C5F9 --description "User-submitted feedback, awaiting triage" 2>/dev/null || true`.
+2. **List open `feedback` issues:** `gh issue list --repo <owner>/<repo> --label feedback --state open --json number,url,title,body,createdAt --limit 200`.
+3. **Drop already-intaken ones.** For each, derive `id` = `<repo-short>-fb<number>`. Skip any `id` that already has a ledger record — it's been triaged into the ledger on a prior run and is riding the digest; re-classifying would waste a subagent. This is the idempotency guard (same pattern as Phase 0).
+4. **If nothing remains, skip** — no subagent, note "no new feedback" and move on.
+5. **Classify the remaining batch with one fresh Sonnet subagent** (read-only; clones the repo for code context; no push/PR/issue/label writes — it only returns JSON). Prompt below. It sees the whole un-triaged batch at once so it can spot duplicates across them, and it may also mark a new issue as a duplicate of an **already-open** `feedback` or non-feedback issue it's given.
+6. **Act on its results** (orchestrator does all writes):
+   - **`duplicate_of` set, high confidence:** close the newer one into the canonical (earliest `createdAt` of the cluster, or the referenced open issue): `gh issue close <dup-url> --reason "not planned" --comment "Duplicate of #<canonical>. Merging the discussion there."` and `gh issue comment <canonical-url> --body "Linked duplicate #<dup> (user feedback)."` Never intake or convert a closed duplicate.
+   - **`bug`, not a duplicate:** `gh issue edit <url> --remove-label feedback --add-label bug` and `gh issue comment <url> --body "Triaged from user feedback as a defect; queued as a bug."` It becomes Task Queue item 1 and gets worked with no further gate.
+   - **`suggestion`, not a duplicate:** append a ledger record — `status: held`, `carried: true`, `source: feedback`, `origin_issue_url: <url>`, `id: <repo-short>-fb<number>`, `date` today, `title`/`summary`/`suggested_label`/`effort` from the classifier. **Leave the `feedback` label on** (keeps it held). It now rides the ranker/digest like any held candidate; promotion relabels it in place (Phase 1).
+   - **Low-confidence duplicate or unclear classification:** leave the issue as-is (keeps `feedback`), note it in the report for the human — never auto-close or auto-convert on a weak signal.
+
+**Classifier subagent prompt (Sonnet):**
+```
+You are triaging user-submitted feedback issues for the <owner>/<repo-name> repository. READ-ONLY. Do not push, open PRs, create issues, or edit labels — only return JSON.
+Clone <repo-url> into /tmp/ as <repo-name>-feedback-triage/ (shallow is fine) so you can check claims against the code.
+You are given new feedback issues plus the currently-open issues for cross-referencing. For EACH new feedback issue decide:
+- classification: "bug" if it reports behavior that is objectively wrong — a reproducible defect, error, or broken feature you can tie to actual code (name the file/area). "suggestion" for feature requests, preferences, opinions, praise, or anything you cannot confirm is a real defect. When unsure, choose "suggestion" — a wrong "bug" call ships an unreviewed change.
+- confidence: "high" | "low".
+- duplicate_of: the issue number this clearly duplicates (prefer the earliest-created of a cluster, or an existing open issue), else null. Only set it on a strong match.
+- suggested_label (P1|P2|P3|P4) and effort (S|M|L) for suggestions; reason (one sentence, grounded in code or the report).
+New feedback issues (JSON): <[{number, title, body, createdAt}]>
+Other open issues for dedup (JSON): <[{number, title, labels}]>
+In every text field use a plain hyphen (-), never an em dash. Delete the clone when done. Your final message must be ONLY a JSON array of {number, classification, confidence, duplicate_of, suggested_label, effort, reason}.
+```
+
+### Phase 5 - Site-scan intake (Sundays only)
+
+Runs on Sunday runs only, per scan-mapped active repo, in the scan pass. A separate WCAG + SEO scanner (outside this workspace) writes findings into the Obsidian vault every Saturday morning; this phase turns the current open findings into GitHub issues **directly** (no digest), so the Task Queue picks them up by priority. No subagent (the orchestrator reads the vault and files), so it runs even when the PR cap is hit.
+
+**Scope — repo → domain** (only repos in **both** this map and the active Target Repositories list; `markpost-cli` and `dashboard` have no scanned site and are excluded):
+
+| Repo | Domain |
+| ---- | ------ |
+| `danholloran` | `danholloran.me` |
+| `grimicorn` | `grimicorn.dev` |
+| `neonpixels` | `neonpixels.dev` |
+| `markpost` | `markpost.io` |
+| `basin` | `basin.fm` |
+| `farflung` | `farflung.io` |
+
+**Vault location** (orchestrator reads only; subagents never touch the vault): `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Site Scans/`. Two files per domain: `<domain> - WCAG.md` and `<domain> - SEO.md`.
+
+**File format:** each file has three markdown tables anchored by Obsidian block refs — `## Issues` (`^issuesTable`), `## Done` (`^doneTable`), `## Ignore` (`^ignoreTable`). **Only the `## Issues` table is actionable.** `## Done` is already-fixed; `## Ignore` is human-dismissed — never file from either. Issues-table columns: `Done | URL | Level | Info | Date` (SEO/WCAG share the shape). `Level` is `A | AA | AAA` (WCAG) or `Critical | Moderate | Minor` (SEO). `URL` is the page/area; `Info` is the finding text.
+
+**Priority mapping (highest Level among a file's findings sets the issue's priority label):**
+
+| WCAG Level | Priority | | SEO Level | Priority |
+| ---------- | -------- |-| --------- | -------- |
+| A | P1 | | Critical | P1 |
+| AA | P2 | | Moderate | P3 |
+| AAA | P3 | | Minor | P4 |
+
+Steps per repo, for each scanner (`WCAG`, `SEO`):
+
+0. **Guard: Sunday only.** Skip the whole phase otherwise.
+1. **Read the scan file.** Missing file (a site not set up yet) → skip that scanner, note "no scan file yet". Parse the `## Issues` table rows (between the header and `^issuesTable`); each non-empty data row is a finding.
+2. **Find the existing open issue** for this (site, scanner): `gh issue list --repo <owner>/<repo> --label <wcag|seo> --state open --json number,url,body` and match the body marker `<!-- site-scan: <domain> <wcag|seo> -->`. **One persistent open issue per (site, scanner)** — idempotency is this marker, no per-finding hashing.
+3. **No findings:**
+   - Open issue exists → close it: `gh issue close <url> --reason completed --comment "All <WCAG|SEO> findings cleared in the latest scan."`
+   - No open issue → do nothing.
+4. **Findings present:**
+   - **Open issue exists** → rebuild it from the current table: `gh issue edit <url> --body "<new body>"` and reconcile its priority label to the current highest Level (remove the stale P-label, add the new one). Don't open a second issue.
+   - **No open issue** → create one: `gh issue create --repo <owner>/<repo> --label <wcag|seo> --label site-scan --label <priority> --title "<title>" --body "<body>"`. Ensure labels first: `gh label create wcag --color 5319E7 --description "Accessibility (WCAG) finding from the weekly site scan" 2>/dev/null || true`, `gh label create seo --color 1D76DB --description "SEO finding from the weekly site scan" 2>/dev/null || true`, `gh label create site-scan --color C2E0C6 --description "Filed from the weekly WCAG/SEO site scan" 2>/dev/null || true`.
+   - Leave it **unassigned** (assigned to `grimicorn` = skipped by the Task Queue).
+
+**Title:** `WCAG accessibility findings - <domain>` / `SEO findings - <domain>`.
+
+**Body:**
+```
+<!-- site-scan: <domain> <wcag|seo> -->
+Filed from the weekly <WCAG accessibility|SEO> scan of <domain> (scanned <scan date from the file>). Each box is one finding from the scanner's open list; fix them in one PR.
+
+- [ ] **[<Level>]** `<URL>` - <Info>
+- [ ] **[<Level>]** `<URL>` - <Info>
+
+### Notes for the worker
+These are scanner findings, not invented - verify each against the live page/code before changing it. Fix on main; put `Closes #<n>` in the PR body. The scanner re-runs weekly, so anything you fix drops off next Sunday's list; anything you cannot fix, leave unchecked and explain in the PR.
+```
+
+Use plain hyphens, never em dashes, in everything written into the issue.
 
 - **Title:** `Improvement candidates - <repo-name> - <Month Dth, YYYY>`
 - **Label:** `improvement-digest`
@@ -200,7 +294,7 @@ Steps per repo:
   </details>
   ```
 
-For a survivor with `source: pr | human`, append its origin to the item's meta so you recognize suggestions you or the agent raised, e.g. `_(suggested: P2, effort: M, from PR #123)_`.
+For a survivor with `source: pr | human | feedback`, append its origin to the item's meta so you recognize where it came from, e.g. `_(suggested: P2, effort: M, from PR #123)_` or `_(suggested: P2, effort: M, from feedback #127)_`. A checked `feedback` item relabels its existing issue in place; a dismissed one closes it (see Phase 1).
 
 The digest's per-item priority label is a suggestion only; it's applied to the promoted issue at promotion time (Phase 1), not to the digest.
 
@@ -213,5 +307,7 @@ Add an **Improvement Scan** section covering:
 - **Promotion (daily):** per repo, which closed digests were processed, how many promoted (with new issue URLs), how many dismissed.
 - **Generation (Wed & Sun):** per repo, the digest URL, or skip reason (`skipped — already generated today`, `skipped — open digest still awaiting triage`, or `no candidates cleared the bar`).
 - **Sentry intake (daily):** per repo, issues synced to Sentry (resolved / archived), issues filed and reopened (URLs), or skip reason (`not a Sentry repo`, `open ceiling reached (<n>)`, `no unresolved production errors`, `auth failed`).
+- **Feedback triage (daily):** per repo, how many new feedback issues were classified, split into converted to `bug` (URLs), intaken as `source: feedback` suggestions (URLs), closed as duplicates (dup → canonical), and low-confidence items left for the human; or `no new feedback`.
+- **Site scans (Sun):** per repo/scanner, the issue URL filed or updated and its priority, `cleared (closed)`, or skip reason (`not Sunday`, `no scan file yet`, `not a scan-mapped repo`).
 - **Held set:** per repo, how many candidates are parked (`status: held`) and carrying forward, with titles.
 
