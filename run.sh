@@ -128,7 +128,7 @@ fi
 # Both message checks are gated on a non-zero exit: a successful run can echo
 # these strings into the log (e.g. by printing this script), which is not a failure.
 if [ "$EXIT_CODE" -ne 0 ] && tail -50 "$LOG_FILE" | grep -qa "OAuth session expired\|authentication_failed"; then
-    log_error_to_obsidian "Auth expired: claude could not authenticate (OAuth session expired). Re-run \`claude setup-token\` and update CLAUDE_CODE_OAUTH_TOKEN in .envrc. No repos were processed." "all"
+    log_error_to_obsidian "Auth expired: claude could not authenticate (OAuth session expired or token revoked). Re-run \`claude setup-token\`, update CLAUDE_CODE_OAUTH_TOKEN in .envrc, then run \`direnv allow\` in the agents dir (editing .envrc revokes direnv approval, so run.sh can't load it). No repos were processed." "all"
 elif [ "$EXIT_CODE" -ne 0 ] && tail -50 "$LOG_FILE" | grep -qa "You've hit your session limit"; then
     # A 5-hour session-limit rejection makes `claude -p` exit 1, but it's an
     # expected throttle, not a crash. Log it as an informational skip so it stops
