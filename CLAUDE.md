@@ -40,13 +40,14 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
 ## Your Responsibilities
 
 1. Run the pre-run usage check; stop entirely if thresholds are hit.
-2. **Scan pass — run this for every repo, in order, before any task work.** These phases are cheap (GitHub reads plus at most two generator/ranker subagents) and high-value, so they go first: a run that later hits a usage stop during the task pass has already recorded every suggestion, promoted every closed digest, and posted every generated digest.
+2. **Scan pass — run this for every repo, in order, before any task work.** These phases are cheap (GitHub reads plus a handful of generator/ranker/classifier/research subagents) and high-value, so they go first: a run that later hits a usage stop during the task pass has already recorded every suggestion, promoted every closed digest, and posted every generated digest.
    a. **Harvest suggestion intake** (see Weekly Improvement Scan → Phase 0). Daily; records PR/human follow-up suggestions to the ledger. Do it even if the PR cap is hit (ledger writes are cheap).
    b. **Promote any closed, unprocessed improvement digest** (see Weekly Improvement Scan → Phase 1). This runs **every day**, not just on generation days — closing a digest is the human's go signal. Do it even if the PR cap is hit (creating issues is cheap).
    c. **Feedback triage** (see Weekly Improvement Scan → Phase 4). Daily, runs **before generation** so new feedback feeds the same day's digest. Reviews user-submitted `feedback` issues: auto-converts confident defects to `bug`, intakes the rest to the ledger as `source: feedback` (left on the `feedback` hold label), and closes duplicates. Cheap except the classifier subagent, which obeys the usage limits — skip classification if a stop threshold was hit (ledger/label writes for already-classified items still run).
    d. **If today is Wednesday or Sunday, generate the repo's improvement digest** (see Weekly Improvement Scan → Phase 2). Generation-days-only; obeys the usage limits — skip if a stop threshold was already hit.
    e. **Sentry intake** (see Weekly Improvement Scan → Phase 3). Daily, Sentry-enabled active repos only; files the most severe production errors as `bug` + `sentry` issues (max 5 per run, none while 10+ are open) and pushes close reasons back to Sentry. Do it even if the PR cap is hit.
    f. **If today is Sunday, site-scan intake** (see Weekly Improvement Scan → Phase 5). Sundays only, scan-mapped active repos only; reads the WCAG/SEO scan files from the Obsidian vault and files one aggregated WCAG and one aggregated SEO issue per site directly (priority mapped from finding Level). No subagent; do it even if the PR cap is hit.
+   g. **Answer blocked-item questions** (see Blocked Item Questions). Daily; answers questions the human left on `blocked` items they reassigned to `grimicorn-agent`, then hands each back. One read-only research subagent per item, obeying the usage limits. Do it even if the PR cap is hit (no PR is opened).
 3. **Task pass — run this for every repo, in order, only after the scan pass has completed for all repos.**
    a. Check open agent PR count; if already 10, skip remaining task work for the repo, note it in the report, continue.
    b. Read the task queue (see priority order below).
@@ -237,7 +238,51 @@ If all 3 fail:
 4. Delete the clone.
 5. Report back with the issue URL (and PR URL) and what blocked it.
 
-If the task has no issue (PR-only maintenance), apply the same to the PR. The orchestrator skips any `blocked` PR/issue — a human triages and removes the label.
+If the task has no issue (PR-only maintenance), apply the same to the PR. The orchestrator skips any `blocked` PR/issue — a human triages and removes the label. If the human needs more information before deciding, they ask in a comment and reassign to `grimicorn-agent` (see Blocked Item Questions).
+
+## Blocked Item Questions
+
+A `blocked` item sometimes needs research before the human can decide. The human comments the question(s) and reassigns the item to `grimicorn-agent` (the agent's own GitHub account). That assignment is the hand-off signal. `blocked` stays on the whole time: answering never unblocks or starts work. `grimicorn-agent` assignment without `blocked` means nothing here.
+
+**Detect** (scan pass step 2g, every active repo; REST because the agent token lacks `read:org`, and the issues endpoint returns PRs too):
+
+```bash
+gh api "repos/<owner>/<repo>/issues?state=open&labels=blocked&assignee=grimicorn-agent&per_page=100" \
+  --jq '.[] | {number, html_url, title, is_pr: (.pull_request != null)}'
+```
+
+**For each item:**
+1. Fetch conversation comments (`gh api repos/<owner>/<repo>/issues/<NUMBER>/comments`; for PRs also `.../pulls/<NUMBER>/comments`). The question is every `grimicorn` comment posted after the most recent `grimicorn-agent` comment.
+2. **No new `grimicorn` comment found:** don't spawn. Comment "Assigned to me, but I found no new question since my last comment. Reply with what you need answered and reassign me." and hand back (step 4).
+3. **Otherwise** spawn one research subagent (`model: "sonnet"`) with the prompt below. If a stop threshold has been hit, skip it: the item stays assigned to `grimicorn-agent` and the next run picks it up. Run the mid-run usage check after it returns.
+4. **Hand back, always** (answered, no question, or subagent failure), so the item never loops:
+   ```bash
+   gh api -X POST repos/<owner>/<repo>/issues/<NUMBER>/assignees -f "assignees[]=grimicorn"
+   gh api -X DELETE repos/<owner>/<repo>/issues/<NUMBER>/assignees -f "assignees[]=grimicorn-agent"
+   ```
+   If the subagent failed or couldn't answer, the orchestrator first posts a comment saying so and why. Never leave `blocked` removed or the item assigned to `grimicorn-agent`.
+
+**Research prompt** (read-only; standard prompt frame, but replace its closing block with this one, since no PR and no suggestions block apply):
+
+```
+You are a subagent working on the <owner>/<repo-name> repository.
+Clone <repo-url> into /tmp/ as <repo-name>-ask-<number>/ (use --filter=blob:none)[, then check out the PR branch].
+Item: <issue/PR URL> (labeled `blocked`; the human needs information before deciding)
+Item context: <title, body, and the blocking comment that explains what decision is needed>
+Questions from grimicorn: <the comment(s) from step 1, verbatim>
+
+Investigate the codebase (and the linked PR, CI logs, or external docs if relevant) and answer every question.
+Then post ONE comment on the item with `gh issue comment` / `gh pr comment`:
+- Answer each question directly, citing evidence (file paths with line numbers, links, command output).
+- Where the question is a decision, give the options, their tradeoffs, and a recommendation.
+- If something can't be determined, say so and what would settle it.
+
+Read-only: do NOT push, create branches, open PRs or issues, or change labels or assignees. The orchestrator handles the hand-back.
+- Delete the local clone directory
+- Report back with the comment URL, or why you couldn't answer
+```
+
+If the repo is a dependent (see Cross-Repo Dependencies), add the read-only reference clone as usual.
 
 ## CI-Green Review Gate
 
@@ -405,6 +450,7 @@ Include in the final report. Don't wait for pending; report as pending and let t
 After all repos, summarize grouped by repo:
 - Tasks completed with PR URLs
 - Tasks blocked with questions: issue URL + what was asked
+- Blocked-item questions answered: item URL + answer comment URL (and any that failed or had no question, handed back anyway)
 - Tasks with unrecoverable errors (and what they are)
 - Tasks/repos skipped and why (including 10-PR cap hits)
 - CI status for all open agent PRs: passing, failing (with check names), or pending
