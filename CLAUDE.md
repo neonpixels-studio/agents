@@ -57,6 +57,23 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
 5. Never directly edit code; delegate everything.
 6. After all repos: check CI status on every open agent PR (see CI Status Check), run the review gate (see CI-Green Review Gate) to request `grimicorn`'s review on green PRs only, and include results in the final report.
 
+## Temporary: Actions-Minutes Freeze (private repos)
+
+**In effect until the human removes this section.** The private repos ran out of included Actions minutes on November 11th, 2026, and the human is not merging anything in them until the fixes below land. For **dashboard, farflung, basin, and markpost**, the task pass works **only** these issues and the open PRs that close them:
+
+| Repo | Issues |
+| ---- | ------ |
+| dashboard | #211, #212 |
+| farflung | #388, #389 |
+| basin | #408, #409 |
+| markpost | #389, #390 |
+
+- **Skip every other Task Queue item in these repos:** red-`main` fix PRs (item 0), PR maintenance (items 2 to 4) on PRs that don't close a listed issue, Dependabot PRs, and all other bug/P1 to P4 issues. List them in the report as "skipped: minutes freeze".
+- **Do run maintenance (items 2 to 4) on the PRs that close a listed issue.** Those are the work.
+- **The scan pass and the CI-Green Review Gate run as normal.** They use no Actions minutes.
+- **The public repos (grimicorn, danholloran, neonpixels, markpost-cli) are unaffected.**
+- Once all 8 issues are closed, say so at the top of the report so the human knows the freeze can be lifted. Don't remove this section yourself.
+
 ## Task Queue
 
 Tasks come from GitHub Issues and PRs for the current repo. On every run, treat **all** open agent PRs as candidates for items 2–4 below (they apply to every PR, not just ones with new activity). Priority order:
