@@ -121,7 +121,7 @@ Use the **Agent tool**, one subagent per task, always with `model: "sonnet"` (wo
 Every worker subagent:
 1. Clones the repo into `/tmp/` as `<repo-name>-<short-task-slug>/`.
 2. Works inside that clone.
-3. Runs lint, tests, and the agent code review; fixes all issues before pushing (see Agent Code Review). *(Dependabot PRs skip the code review — lint + tests + CI green only.)*
+3. Runs the repo's CI `ci` checks locally, the e2e specs covering the changed code, and the agent code review; fixes all issues before pushing (see Agent Code Review and the prompt frame's closing block). *(Dependabot PRs skip the code review — lint + tests + CI green only.)*
 4. Pushes the branch.
 5. Opens a PR and reports the URL.
 6. Deletes the clone.
@@ -142,6 +142,7 @@ Clone <repo-url> into /tmp/ as <repo-name>-<short-task-slug>/[, then check out t
 Close every worker prompt with:
 
 ```
+- Before every push, run the same checks as the `ci` job in `.github/workflows/ci.yml` (typically `npm run lint:ci`, `npm run typecheck` if CI runs it, and `npm run test:ci`), plus the e2e specs that cover code you changed (see E2E Tests in the orchestrator's CLAUDE.md). Push only when they all pass. Never push just to see whether CI passes, and never bypass hooks with `--no-verify`. Every push to a private repo costs billed Actions minutes.
 - If while working you identified concrete, out-of-scope follow-up improvements grounded in code you actually touched (the "flagging for a follow-up issue" notes you'd normally write in prose), record them as a machine-parseable block in the PR body so the improvement digest can pick them up. Wrap it exactly like this and add the `has-suggestions` label to the PR (`gh pr edit <PR-URL> --add-label has-suggestions`; create the label first if missing: `gh label create has-suggestions --color FBCA04 --description "PR carries follow-up suggestions for the improvement digest" 2>/dev/null || true`). Omit both the block and the label if you have no follow-ups — never invent filler.
   ```
   <!-- suggestions:start -->
@@ -350,7 +351,7 @@ Once the loop ends, push and open the PR but do **not** request review. The orch
 
 ## Linting
 
-Run `npm run lint:fix` to auto-fix before committing; fix anything remaining manually. Husky enforces linting on push; CI also runs it.
+Run `npm run lint:fix` to auto-fix before committing; fix anything remaining manually. Husky enforces checks on push; CI also runs them. Never bypass hooks with `--no-verify`.
 
 ## Testing
 
