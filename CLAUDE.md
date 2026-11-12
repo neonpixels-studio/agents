@@ -57,23 +57,6 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
 5. Never directly edit code; delegate everything.
 6. After all repos: check CI status on every open agent PR (see CI Status Check), run the review gate (see CI-Green Review Gate) to request `grimicorn`'s review on green PRs only, and include results in the final report.
 
-## Temporary: Actions-Minutes Freeze (private repos)
-
-**In effect until the human removes this section.** The private repos ran out of included Actions minutes on November 11th, 2026, and the human is not merging anything in them until the fixes below land. For **dashboard, farflung, basin, and markpost**, the task pass works **only** these issues and the open PRs that close them:
-
-| Repo | Issues |
-| ---- | ------ |
-| dashboard | #211, #212 |
-| farflung | #388, #389, #392 |
-| basin | #408, #409, #412 |
-| markpost | #389, #390, #393 |
-
-- **Skip every other Task Queue item in these repos:** red-`main` fix PRs (item 0), PR maintenance (items 2 to 4) on PRs that don't close a listed issue, Dependabot PRs, and all other bug/P1 to P4 issues. List them in the report as "skipped: minutes freeze".
-- **Do run maintenance (items 2 to 4) on the PRs that close a listed issue.** Those are the work.
-- **The scan pass and the CI-Green Review Gate run as normal.** They use no Actions minutes.
-- **The public repos (grimicorn, danholloran, neonpixels, markpost-cli) are unaffected.**
-- Once all listed issues are closed, say so at the top of the report so the human knows the freeze can be lifted. Don't remove this section yourself.
-
 ## Task Queue
 
 Tasks come from GitHub Issues and PRs for the current repo. On every run, treat **all** open agent PRs as candidates for items 2–4 below (they apply to every PR, not just ones with new activity). Priority order:
@@ -314,7 +297,7 @@ If the repo is a dependent (see Cross-Repo Dependencies), add the read-only refe
 3. **Pending:** do nothing, don't wait. The next daily run picks it up.
 4. **Failing:** classify each failing check by comparing against the latest `main` run (`gh run list --repo <owner>/<repo> --branch main --limit 1`, then `gh run view`, or `gh api repos/<owner>/<repo>/commits/main/check-runs`):
    - **Billing-blocked (check this first):** the check run has zero steps, and its annotation (`gh api repos/<owner>/<repo>/check-runs/<id>/annotations`) reads "The job was not started because recent account payments have failed or your spending limit needs to be increased". This is not a code failure. Never make it a Task Queue item 3 task, never count it toward the Retry Limit, and never label the PR `ci-held` or `blocked`. A billing-blocked check on `main` does not count as red on `main`. Report the PR as "billing-blocked".
-     - While the Actions-Minutes Freeze is in effect, or while the newest run on `main` is also billing-blocked, do nothing. The human restores billing.
+     - While the newest run on `main` is also billing-blocked, do nothing. The human restores billing.
      - Otherwise, re-trigger CI once. **Agent PRs:** `gh pr update-branch <PR-URL>`. This merges `main` into the branch on GitHub's side, so no worker is needed. Don't use `gh run rerun`, because a rerun reuses the old commit and its old workflow. If update-branch reports a conflict, queue the PR as Task Queue item 2. **Dependabot PRs:** `gh pr comment <PR-URL> --body "@dependabot rebase"`. Never push to a Dependabot branch for this, because Dependabot stops maintaining a PR once someone else pushes to it.
    - **Red only on the PR (PR-caused):** it is already a Task Queue item 3. The worker fixes it **on the PR branch**. No review request until green.
    - **Red on `main` too (e.g. `dependency-audit`, advisory reds):** do **not** fix it in each PR. Fixing the same override in N branches produces N conflicting copies. Instead:
