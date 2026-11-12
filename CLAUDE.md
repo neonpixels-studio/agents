@@ -64,15 +64,15 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
 | Repo | Issues |
 | ---- | ------ |
 | dashboard | #211, #212 |
-| farflung | #388, #389 |
-| basin | #408, #409 |
-| markpost | #389, #390 |
+| farflung | #388, #389, #392 |
+| basin | #408, #409, #412 |
+| markpost | #389, #390, #393 |
 
 - **Skip every other Task Queue item in these repos:** red-`main` fix PRs (item 0), PR maintenance (items 2 to 4) on PRs that don't close a listed issue, Dependabot PRs, and all other bug/P1 to P4 issues. List them in the report as "skipped: minutes freeze".
 - **Do run maintenance (items 2 to 4) on the PRs that close a listed issue.** Those are the work.
 - **The scan pass and the CI-Green Review Gate run as normal.** They use no Actions minutes.
 - **The public repos (grimicorn, danholloran, neonpixels, markpost-cli) are unaffected.**
-- Once all 8 issues are closed, say so at the top of the report so the human knows the freeze can be lifted. Don't remove this section yourself.
+- Once all listed issues are closed, say so at the top of the report so the human knows the freeze can be lifted. Don't remove this section yourself.
 
 ## Task Queue
 
