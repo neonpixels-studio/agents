@@ -241,7 +241,7 @@ Runs on Sunday runs only, per scan-mapped active repo, in the scan pass. A separ
 Steps per repo, for each scanner (`WCAG`, `SEO`):
 
 0. **Guard: Sunday only.** Skip the whole phase otherwise.
-1. **Read the scan file.** Missing file (a site not set up yet) → skip that scanner, note "no scan file yet". Parse the `## Issues` table rows (between the header and `^issuesTable`); each non-empty data row is a finding.
+1. **Read the scan file.** Expand `~` in `siteScans.vaultDir` and double-quote the full path (it contains spaces). If the directory itself does not exist, that is a config error, not a quiet week: log an Errors row (`item` = `all`, note = the expanded path) once per run and skip Phase 5 for every repo. A missing file for one domain (a site not set up yet) → skip that scanner, note "no scan file yet". Parse the `## Issues` table rows (between the header and `^issuesTable`); each non-empty data row is a finding.
 2. **Find the existing open issue** for this (site, scanner): `gh issue list --repo <owner>/<repo> --label <wcag|seo> --state open --json number,url,body` and match the body marker `<!-- site-scan: <domain> <wcag|seo> -->`. **One persistent open issue per (site, scanner)** — idempotency is this marker, no per-finding hashing.
 3. **No findings:**
    - Open issue exists → close it: `gh issue close <url> --reason completed --comment "All <WCAG|SEO> findings cleared in the latest scan."`
