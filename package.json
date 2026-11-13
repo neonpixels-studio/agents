@@ -4,7 +4,12 @@
   "description": "Unattended Claude Code orchestrator that maintains a fleet of GitHub repos and opens review-ready PRs",
   "scripts": {
     "launch": "launchctl kickstart -k gui/$(id -u)/com.grimicorn.agents",
-    "logs": "tail -f ~/Library/Logs/agents.log"
+    "logs": "tail -f ~/Library/Logs/agents.log",
+    "lint": "prettier --check . && shellcheck run.sh",
+    "lint:fix": "prettier --write .",
+    "test": "vitest",
+    "test:ci": "vitest run",
+    "prepare": "husky"
   },
   "repository": {
     "type": "git",
@@ -22,5 +27,14 @@
     "url": "https://github.com/neonpixels-studio/agents/issues"
   },
   "homepage": "https://github.com/neonpixels-studio/agents#readme",
-  "private": true
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "prettier": "^3.10.1",
+    "vitest": "^5.1.0"
+  }
 }

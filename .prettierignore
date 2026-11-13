@@ -1,0 +1,4 @@
+# Markdown is the program here: prettier re-fences the nested code blocks in the
+# CLAUDE.md prompt templates, which changes the text workers actually receive.
+*.md
+package-lock.json

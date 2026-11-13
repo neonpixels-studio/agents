@@ -63,6 +63,7 @@ The orchestrator and its workers run unattended with `--dangerously-skip-permiss
 | [`launchd/`](launchd/) | The schedule. |
 | [`html-issue.md`](html-issue.md) | Issue template for features specced with a reference HTML design. |
 | [`.claude/agents/`](.claude/agents/) | Project subagent definitions. |
+| [`tests/`](tests/) | Guards for the spec, the config, and the shell around it (see [Development](#development)). |
 
 Most of the interesting decisions are in comments and rationale lines in `CLAUDE.md` and `run.sh`. Each one exists because something broke.
 
@@ -97,9 +98,10 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
    | `sentry` | `enabled`, the org slug, and a repo-to-project map. |
    | `siteScans` | `enabled`, the directory holding `<domain> - WCAG.md` / `<domain> - SEO.md` scan files, and a repo-to-domain map. |
 
-2. Copy `.envrc.sample` to `.envrc`, fill it in (`claude setup-token` for the OAuth token), and run `direnv allow`.
-3. For each repo with e2e tests, put its dotenvx decryption keys in `envs/<repo-name>.keys` (gitignored).
-4. Install the schedule:
+2. Run `npm install` (installs the test tooling and the pre-commit hook).
+3. Copy `.envrc.sample` to `.envrc`, fill it in (`claude setup-token` for the OAuth token), and run `direnv allow`.
+4. For each repo with e2e tests, put its dotenvx decryption keys in `envs/<repo-name>.keys` (gitignored).
+5. Install the schedule:
 
    ```bash
    sed -e "s#__WORKSPACE__#$PWD#g" -e "s#__HOME__#$HOME#g" -e "s#__PATH__#$PATH#g" \
@@ -109,13 +111,30 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
 
    Rename the label if you like; `npm run launch` kicks it by that label.
 
-5. `npm run launch` starts a run immediately; `npm run logs` tails it.
+6. `npm run launch` starts a run immediately; `npm run logs` tails it.
 
 ### Known limitations
 
 - **The usage meters aren't readable from a headless run.** The pre-run and mid-run usage checks in CLAUDE.md are specified but can't actually be evaluated, so `run.sh` catches the session-limit rejection after the fact instead.
 - **macOS only.** The log paths and the scheduler assume it.
 - **The stack is opinionated.** Swapping out GitHub, dotenvx, or Neon means editing the spec, not the config.
+
+## Development
+
+The program is markdown, so the tests guard what a markdown linter can't:
+
+- **The trust boundary.** The jq filters CLAUDE.md and the scan spec tell the orchestrator to use are pulled out of the docs and run against fixture comments, so weakening a filter in prose fails CI.
+- **Spec hygiene.** No GitHub logins, Sentry org, or machine paths hardcoded outside `agents.config.json`; every `(see Section)` names a heading that exists; README links resolve.
+- **Config.** `agents.config.json` is validated: real GitHub URLs, no repo both active and disabled, Sentry and site-scan maps only reference known repos.
+- **`run.sh`.** Runs in a sandbox with stubbed `claude` and `direnv` to check the config guard, the error table (including the `^errorTable` anchor), lock handling, and detection of failures that exit quietly.
+- **`trim_logs.py` and the launchd template.**
+
+```bash
+npm run lint     # prettier (code and JSON only) + shellcheck run.sh
+npm test         # vitest
+```
+
+Prettier skips markdown on purpose: it re-fences the nested code blocks in the CLAUDE.md prompt templates, which changes what workers receive. The pre-commit hook runs lint, tests, and a staged gitleaks scan; CI runs the same plus a full gitleaks scan.
 
 ## License
 
