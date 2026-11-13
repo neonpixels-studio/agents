@@ -1,21 +1,26 @@
 {
   "name": "agents",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Unattended Claude Code orchestrator that maintains a fleet of GitHub repos and opens review-ready PRs",
   "scripts": {
     "launch": "launchctl kickstart -k gui/$(id -u)/com.grimicorn.agents",
     "logs": "tail -f ~/Library/Logs/agents.log"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://grimicorn@github.com/neonpixels-studio/agents.git"
+    "url": "git+https://github.com/neonpixels-studio/agents.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "claude-code",
+    "ai-agents",
+    "automation",
+    "github"
+  ],
+  "author": "Danny Holloran",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/neonpixels-studio/agents/issues"
   },
-  "homepage": "https://github.com/neonpixels-studio/agents#readme"
+  "homepage": "https://github.com/neonpixels-studio/agents#readme",
+  "private": true
 }
