@@ -12,7 +12,7 @@ Two further phases file issues **directly** (no digest): Sentry intake (Phase 3)
 - **Digest generation — Wednesdays and Sundays only** (Phase 2). Runs in the scan pass, before any task work, on those days. Pulls the whole ledger pool (generator output + carried `held`, including intake and feedback) through the ranker.
 - **Sentry intake — daily** (Phase 3). Direct-file; see its section.
 - **Feedback triage — daily** (Phase 4). Runs before Phase 2 so new feedback rides the same day's digest; confident defects direct-file as `bug`.
-- **Site-scan intake — Sundays only** (Phase 5). Direct-file WCAG/SEO issues from the Obsidian vault.
+- **Site-scan intake — Sundays only** (Phase 5). Direct-file WCAG/SEO issues from the scan files in `siteScans.vaultDir`.
 
 Generation guards:
 - **At most once per generation day:** skip if a digest was already created today — `gh issue list --repo <owner>/<repo> --label improvement-digest --state all --search "created:$(date +%Y-%m-%d)" --json number`.
@@ -23,7 +23,7 @@ Generation guards:
 
 Persistent memory of every candidate ever proposed, so the scan never re-proposes something tracked/promoted/rejected. Without it you get the same suggestions weekly.
 
-- **Location:** `/Volumes/External/Development/agents/.ledger/<repo-name>.jsonl`, one file per repo (`.ledger/` is gitignored).
+- **Location:** `<workspace>/.ledger/<repo-name>.jsonl`, one file per repo (`.ledger/` is gitignored).
 - **Written only by the orchestrator.** Subagents never touch it. Generator/ranker subagents receive ledger context in prompts and return data; the orchestrator does all reads/writes.
 - **Append-only JSONL, latest record per `id` wins.** To change status, append a new record with the same `id` — never rewrite the file.
 - **Record:**
@@ -54,7 +54,7 @@ Runs every run as step 2b, per repo. **The human closing a digest is the trigger
 3. Parse each digest's checklist: `- [x] \`<id>\` ...` = checked (wanted); `- [ ] \`<id>\` ...` = unchecked (dismissed). Nothing checked is a valid "dismiss all".
 4. For each **checked** item: look up its ledger record by `id`.
    - **`source: feedback`** (has `origin_issue_url`): the user's issue already exists — **relabel it in place**, don't create a new one. `gh issue edit <origin_issue_url> --remove-label feedback --add-label <suggested_label> --add-label from-feedback` (`from-feedback` marks the body as untrusted end-user text; see Untrusted Input in CLAUDE.md) and `gh issue comment <origin_issue_url> --body "Prioritized from improvement digest <digest-url> (<suggested_label>)."` Append a `promoted` record with `promoted_issue_url = origin_issue_url`.
-   - **Any other source:** create a real issue — title from `title`; body = `rationale` + acceptance criteria + `Promoted from improvement digest <digest-url>`; label = `suggested_label`. **Leave it unassigned** (do not assign `grimicorn`). Append a `promoted` record with `promoted_issue_url` set.
+   - **Any other source:** create a real issue — title from `title`; body = `rationale` + acceptance criteria + `Promoted from improvement digest <digest-url>`; label = `suggested_label`. **Leave it unassigned** (do not assign `<human>`). Append a `promoted` record with `promoted_issue_url` set.
 5. For each **unchecked** item: append a record with `status: rejected` (won't be re-proposed). **If `source: feedback`:** the user's report was reviewed and declined, so close its origin issue — `gh issue close <origin_issue_url> --reason "not planned" --comment "Reviewed in the improvement digest and not planned. Reopen if you disagree."` (removes it from the `feedback` hold queue).
 6. Mark the digest done (never reprocessed): `gh issue edit <digest-url> --add-label digest-processed` then `gh issue comment <digest-url> --body "Promoted: <urls>. Dismissed: <n> unchecked."` Leave it **closed**. The `digest-processed` label is the idempotency guard.
 
@@ -103,16 +103,9 @@ Every returned item keeps its original fields plus a one-line `justification`, a
 
 Runs every run per repo, after Phase 1, in the scan pass. Turns the most severe unresolved production errors into `bug` issues **directly** (no digest, no human triage), so the Task Queue picks them up as item 1 (Bug). Cheap (API reads + issue writes, no subagents): runs even when the PR cap is hit and on non-generation days.
 
-**Scope:** only repos in **both** the active Target Repositories list and this Sentry list. Disabled repos get nothing until re-enabled.
+**Scope:** skip the whole phase unless `sentry.enabled` is true in `agents.config.json`. Then only repos in **both** the active Target Repositories list and `sentry.projects` (repo name → Sentry project slug). Disabled repos get nothing until re-enabled.
 
-| Repo | Sentry project |
-| ---- | -------------- |
-| `dashboard` | `dashboard` |
-| `basin` | `basin` |
-| `farflung` | `farflung` |
-| `markpost` | `markpost` |
-
-Org slug: `neonpixels`. API base: `https://sentry.io/api/0`. Auth: `Authorization: Bearer $SENTRY_AUTH_TOKEN` (from `.envrc`; scopes `org:read`, `project:read`, `event:read`, `event:write`; `event:write` is only for the status sync in step 3).
+Org slug: `<sentry-org>` (`sentry.org`). API base: `https://sentry.io/api/0`. Auth: `Authorization: Bearer $SENTRY_AUTH_TOKEN` (from `.envrc`; scopes `org:read`, `project:read`, `event:read`, `event:write`; `event:write` is only for the status sync in step 3).
 
 **Limits (named, tune here):**
 - `SENTRY_NEW_PER_RUN = 5`: max issues filed or reopened per repo per run.
@@ -131,22 +124,22 @@ Steps per repo:
 
 0. **Guard.** If `SENTRY_AUTH_TOKEN` is empty or any Sentry call returns 401/403, log one Errors row (`item` = repo, note = the status) and skip this phase for the repo. Never fail silently.
 1. **Ensure labels:** `gh label create sentry --repo <owner>/<repo> --color 362D59 --description "Filed from a Sentry production error" 2>/dev/null || true` and `gh label create sentry-synced --repo <owner>/<repo> --color C5DEF5 --description "Close reason pushed to Sentry" 2>/dev/null || true` (`bug` already exists).
-2. **Resolve the project id:** `curl -sf -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://sentry.io/api/0/projects/neonpixels/<project>/" | jq -r .id`.
+2. **Resolve the project id:** `curl -sf -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://sentry.io/api/0/projects/<sentry-org>/<project>/" | jq -r .id`.
 3. **Sync closed issues to Sentry** (runs even at the open ceiling). For each `gh issue list --repo <owner>/<repo> --label sentry --state closed --search "-label:sentry-synced" --json number,url,stateReason,body`, read the `sentry-issue-id` marker and update it:
    ```bash
    # stateReason COMPLETED
    curl -sf -X PUT -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" -H "Content-Type: application/json" \
-     "https://sentry.io/api/0/organizations/neonpixels/issues/<id>/" \
+     "https://sentry.io/api/0/organizations/<sentry-org>/issues/<id>/" \
      -d '{"status":"resolved","statusDetails":{"inNextRelease":true}}'
    # stateReason NOT_PLANNED
    curl -sf -X PUT -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" -H "Content-Type: application/json" \
-     "https://sentry.io/api/0/organizations/neonpixels/issues/<id>/" \
+     "https://sentry.io/api/0/organizations/<sentry-org>/issues/<id>/" \
      -d '{"status":"ignored","substatus":"archived_until_escalating","statusDetails":{}}'
    ```
    On success: `gh issue edit <url> --add-label sentry-synced` and `gh issue comment <url> --body "Sentry <shortId>: <resolved in next release|archived until escalating>."`. On failure: Errors row, leave the label off so the next run retries. A `404` means the Sentry issue was deleted or merged: label it synced and comment that.
 4. **Fetch candidates** (unresolved, production, fatal/error, last 14 days):
    ```bash
-   curl -sf -G -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://sentry.io/api/0/organizations/neonpixels/issues/" \
+   curl -sf -G -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://sentry.io/api/0/organizations/<sentry-org>/issues/" \
      --data-urlencode "project=<project-id>" --data-urlencode "environment=production" \
      --data-urlencode "query=is:unresolved level:[fatal,error]" \
      --data-urlencode "statsPeriod=14d" --data-urlencode "sort=freq" --data-urlencode "limit=100"
@@ -159,7 +152,7 @@ Steps per repo:
    - **Closed, `sentry-synced`:** Sentry brought it back (regressed or escalating), so it is real. Reopen: `gh issue edit <url> --remove-label sentry-synced`, then `gh issue reopen <url> --comment "Back in Sentry (<substatus>): last seen <lastSeen>, <count> events, release <release>. <permalink>"`. Counts against the per-run cap.
    - **Closed, not yet `sentry-synced`:** skip; step 3 failed for it this run and will retry.
    Stop when the per-run allowance is spent.
-5. **Build the issue.** Fetch the latest event: `curl -sf -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://sentry.io/api/0/organizations/neonpixels/issues/<id>/events/latest/"`. From its `exception` entry take only each value's `type`, `value`, and the last 15 in-app frames (`filename`, `function`, `lineNo`): `jq '[.entries[] | select(.type=="exception") | .data.values[] | {type, value, frames: ((.stacktrace.frames // []) | map(select(.inApp)) | .[-15:])}]'`. Also take `release.version` (the deployed commit SHA). **Copy nothing else** from the event: no `request`, `user`, `contexts`, `tags`, `breadcrumbs`, or `extra`. They carry IPs, emails, cookies, and headers, and these repos may be public. Redact any email address or token-looking string in `value` to `[redacted]`.
+5. **Build the issue.** Fetch the latest event: `curl -sf -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://sentry.io/api/0/organizations/<sentry-org>/issues/<id>/events/latest/"`. From its `exception` entry take only each value's `type`, `value`, and the last 15 in-app frames (`filename`, `function`, `lineNo`): `jq '[.entries[] | select(.type=="exception") | .data.values[] | {type, value, frames: ((.stacktrace.frames // []) | map(select(.inApp)) | .[-15:])}]'`. Also take `release.version` (the deployed commit SHA). **Copy nothing else** from the event: no `request`, `user`, `contexts`, `tags`, `breadcrumbs`, or `extra`. They carry IPs, emails, cookies, and headers, and these repos may be public. Redact any email address or token-looking string in `value` to `[redacted]`.
    ```bash
    gh issue create --repo <owner>/<repo> --label bug --label sentry \
      --title "<shortId>: <title>" --body "<body>"
@@ -185,7 +178,7 @@ Steps per repo:
    ### Notes for the worker
    Production may lag `main`. Run `git log <release.version>..origin/main` to see what has landed since the deployed release, and verify the error still reproduces against `main` before fixing. If it is already fixed on `main`, close this as completed with a comment naming the fixing commit. If it is noise (bot traffic, third-party/network failure, rate limiting with no code cause), comment why and close as not planned; the orchestrator archives it in Sentry and it only returns if it escalates. Close with the right reason (`gh issue close <n> --reason completed|"not planned"`): the reason decides what happens in Sentry. Put `Fixes <shortId>` in the PR body alongside `Closes #<n>`.
    ```
-   Leave it **unassigned** (assigned to `grimicorn` = skipped by the Task Queue). Use plain hyphens, never em dashes, in anything you write into the issue.
+   Leave it **unassigned** (assigned to `<human>` = skipped by the Task Queue). Use plain hyphens, never em dashes, in anything you write into the issue.
 
 ### Phase 4 - Feedback triage (daily)
 
@@ -223,20 +216,11 @@ In every text field use a plain hyphen (-), never an em dash. Delete the clone w
 
 ### Phase 5 - Site-scan intake (Sundays only)
 
-Runs on Sunday runs only, per scan-mapped active repo, in the scan pass. A separate WCAG + SEO scanner (outside this workspace) writes findings into the Obsidian vault every Saturday morning; this phase turns the current open findings into GitHub issues **directly** (no digest), so the Task Queue picks them up by priority. No subagent (the orchestrator reads the vault and files), so it runs even when the PR cap is hit.
+Runs on Sunday runs only, per scan-mapped active repo, in the scan pass. A separate WCAG + SEO scanner (outside this workspace) writes findings into `siteScans.vaultDir` every Saturday morning; this phase turns the current open findings into GitHub issues **directly** (no digest), so the Task Queue picks them up by priority. No subagent (the orchestrator reads the scan files and files the issues), so it runs even when the PR cap is hit.
 
-**Scope — repo → domain** (only repos in **both** this map and the active Target Repositories list; `markpost-cli` and `dashboard` have no scanned site and are excluded):
+**Scope:** skip the whole phase unless `siteScans.enabled` is true in `agents.config.json`. Then only repos in **both** `siteScans.sites` (repo name → scanned domain) and the active Target Repositories list. A repo with no scanned site is simply absent from the map.
 
-| Repo | Domain |
-| ---- | ------ |
-| `danholloran` | `danholloran.me` |
-| `grimicorn` | `grimicorn.dev` |
-| `neonpixels` | `neonpixels.dev` |
-| `markpost` | `markpost.io` |
-| `basin` | `basin.fm` |
-| `farflung` | `farflung.io` |
-
-**Vault location** (orchestrator reads only; subagents never touch the vault): `/Users/dholloran/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Site Scans/`. Two files per domain: `<domain> - WCAG.md` and `<domain> - SEO.md`.
+**Scan file location** (orchestrator reads only; subagents never touch it): `siteScans.vaultDir`. Two files per domain: `<domain> - WCAG.md` and `<domain> - SEO.md`.
 
 **File format:** each file has three markdown tables anchored by Obsidian block refs — `## Issues` (`^issuesTable`), `## Done` (`^doneTable`), `## Ignore` (`^ignoreTable`). **Only the `## Issues` table is actionable.** `## Done` is already-fixed; `## Ignore` is human-dismissed — never file from either. Issues-table columns: `Done | URL | Level | Info | Date` (SEO/WCAG share the shape). `Level` is `A | AA | AAA` (WCAG) or `Critical | Moderate | Minor` (SEO). `URL` is the page/area; `Info` is the finding text.
 
@@ -259,7 +243,7 @@ Steps per repo, for each scanner (`WCAG`, `SEO`):
 4. **Findings present:**
    - **Open issue exists** → rebuild it from the current table: `gh issue edit <url> --body "<new body>"` and reconcile its priority label to the current highest Level (remove the stale P-label, add the new one). Don't open a second issue.
    - **No open issue** → create one: `gh issue create --repo <owner>/<repo> --label <wcag|seo> --label site-scan --label <priority> --title "<title>" --body "<body>"`. Ensure labels first: `gh label create wcag --color 5319E7 --description "Accessibility (WCAG) finding from the weekly site scan" 2>/dev/null || true`, `gh label create seo --color 1D76DB --description "SEO finding from the weekly site scan" 2>/dev/null || true`, `gh label create site-scan --color C2E0C6 --description "Filed from the weekly WCAG/SEO site scan" 2>/dev/null || true`.
-   - Leave it **unassigned** (assigned to `grimicorn` = skipped by the Task Queue).
+   - Leave it **unassigned** (assigned to `<human>` = skipped by the Task Queue).
 
 **Title:** `WCAG accessibility findings - <domain>` / `SEO findings - <domain>`.
 
@@ -279,7 +263,7 @@ Use plain hyphens, never em dashes, in everything written into the issue.
 
 - **Title:** `Improvement candidates - <repo-name> - <Month Dth, YYYY>`
 - **Label:** `improvement-digest`
-- **Assignee:** `grimicorn` (lands it in the human's queue; the "skip grimicorn-assigned" rule keeps the daily loop from treating it as a task)
+- **Assignee:** `<human>` (lands it in the human's queue; the "skip `<human>`-assigned" rule keeps the daily loop from treating it as a task)
 - **Body:**
   ```
   Automated weekly scan. Check the boxes for the improvements you want turned into tracked issues, then **close this issue** when you're done triaging — closing it is the go signal. On its next run the agent creates the checked items as real issues (unassigned, labelled by priority) and leaves this digest closed; unchecked items are dismissed and won't be re-proposed. While this stays open nothing happens, so take as long as you need.

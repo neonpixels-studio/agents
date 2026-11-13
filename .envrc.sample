@@ -4,6 +4,7 @@ export NEON_API_KEY=
 # Authenticates the unattended cron so the login can't silently expire mid-week.
 export CLAUDE_CODE_OAUTH_TOKEN=
 # Sentry auth token for the daily Sentry intake (docs/improvement-scan.md, Phase 3).
+# Only needed when `sentry.enabled` is true in agents.config.json.
 # Create in Sentry > Settings > Developer Settings > Personal Tokens (or an org
 # internal integration) with scopes: org:read, project:read, event:read, and
 # event:write (event:write lets the run resolve/archive Sentry issues when the GitHub issue closes).

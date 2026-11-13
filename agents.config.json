@@ -1,0 +1,50 @@
+{
+  "identities": {
+    "human": "grimicorn",
+    "agent": "grimicorn-agent"
+  },
+  "trustedBots": ["coderabbitai[bot]", "github-actions[bot]", "dependabot[bot]"],
+  "repos": {
+    "active": [
+      "https://github.com/neonpixels-studio/dashboard",
+      "https://github.com/neonpixels-studio/grimicorn",
+      "https://github.com/neonpixels-studio/danholloran",
+      "https://github.com/neonpixels-studio/neonpixels",
+      "https://github.com/neonpixels-studio/markpost",
+      "https://github.com/neonpixels-studio/markpost-cli",
+      "https://github.com/neonpixels-studio/basin",
+      "https://github.com/neonpixels-studio/farflung"
+    ],
+    "disabled": []
+  },
+  "crossRepoDependencies": [
+    {
+      "dependent": "markpost-cli",
+      "dependsOn": "markpost",
+      "contractSurface": "`server/api/` (handlers), `server/types/api.types.ts` (request/response contract), `postman/collections/api/` (specs + `definition.yaml`). `markpost-cli` mirrors markpost's `api.types.ts` and `markdown.ts` by hand, so treat markpost as the source of truth for both."
+    }
+  ],
+  "errorLog": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Errors.md",
+  "sentry": {
+    "enabled": true,
+    "org": "neonpixels",
+    "projects": {
+      "dashboard": "dashboard",
+      "basin": "basin",
+      "farflung": "farflung",
+      "markpost": "markpost"
+    }
+  },
+  "siteScans": {
+    "enabled": true,
+    "vaultDir": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Site Scans",
+    "sites": {
+      "danholloran": "danholloran.me",
+      "grimicorn": "grimicorn.dev",
+      "neonpixels": "neonpixels.dev",
+      "markpost": "markpost.io",
+      "basin": "basin.fm",
+      "farflung": "farflung.io"
+    }
+  }
+}

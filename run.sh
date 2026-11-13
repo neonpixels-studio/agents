@@ -6,7 +6,19 @@ ERR_FILE="$LOG_DIR/agents-error.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 LOCK_DIR="$LOG_DIR/.agents-run.lock"
-OBSIDIAN_ERR_FILE="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Errors.md"
+CONFIG_FILE="$SCRIPT_DIR/agents.config.json"
+
+# Every per-installation value lives in agents.config.json. Fail loudly (to the
+# rolling log, since the error table path itself comes from the config) rather
+# than run the orchestrator against a missing or broken config.
+if ! jq -e . "$CONFIG_FILE" >/dev/null 2>&1; then
+    echo "=== Run aborted: $CONFIG_FILE is missing or not valid JSON ($TIMESTAMP) ===" >> "$LOG_FILE"
+    exit 1
+fi
+
+# `errorLog: null` disables the markdown error table; a leading ~ means $HOME.
+ERROR_LOG_FILE=$(jq -r '.errorLog // empty' "$CONFIG_FILE")
+ERROR_LOG_FILE="${ERROR_LOG_FILE/#\~/$HOME}"
 
 ordinal_date() {
     local day month year suffix
@@ -22,16 +34,17 @@ ordinal_date() {
     printf '%s %s%s, %s' "$month" "$day" "$suffix" "$year"
 }
 
-log_error_to_obsidian() {
+log_error_row() {
     local note="$1"
     local repo="${2:-all}"
     local datestr row tmp
+    [ -z "$ERROR_LOG_FILE" ] && return 0
     datestr=$(ordinal_date)
     row="| ${datestr} | agents | ${repo} | ${note} |"
 
-    if [ ! -f "$OBSIDIAN_ERR_FILE" ]; then
-        mkdir -p "$(dirname "$OBSIDIAN_ERR_FILE")"
-        printf -- '\n| date | source | item | note |\n| ---- | ------ | ---- | ---- |\n' > "$OBSIDIAN_ERR_FILE"
+    if [ ! -f "$ERROR_LOG_FILE" ]; then
+        mkdir -p "$(dirname "$ERROR_LOG_FILE")"
+        printf -- '\n| date | source | item | note |\n| ---- | ------ | ---- | ---- |\n' > "$ERROR_LOG_FILE"
     fi
 
     # The file may end with an Obsidian block-reference anchor (`^errorTable`)
@@ -39,18 +52,18 @@ log_error_to_obsidian() {
     # anchor and orphan it into a second table, so insert immediately BEFORE the
     # anchor line when it exists. The row is passed via the environment (ROW) so
     # awk doesn't reinterpret backslash escapes like `\|` inside the note.
-    if grep -qxF '^errorTable' "$OBSIDIAN_ERR_FILE"; then
+    if grep -qxF '^errorTable' "$ERROR_LOG_FILE"; then
         local tmp
         tmp=$(mktemp)
         ROW="$row" awk '$0 == "^errorTable" { print ENVIRON["ROW"] } { print }' \
-            "$OBSIDIAN_ERR_FILE" > "$tmp" && mv "$tmp" "$OBSIDIAN_ERR_FILE"
+            "$ERROR_LOG_FILE" > "$tmp" && mv "$tmp" "$ERROR_LOG_FILE"
         return
     fi
 
     # No anchor: append at the end of the table. Ensure a trailing newline first
     # so the new row never joins the last existing line.
-    [ -n "$(tail -c1 "$OBSIDIAN_ERR_FILE")" ] && printf '\n' >> "$OBSIDIAN_ERR_FILE"
-    printf '%s\n' "$row" >> "$OBSIDIAN_ERR_FILE"
+    [ -n "$(tail -c1 "$ERROR_LOG_FILE")" ] && printf '\n' >> "$ERROR_LOG_FILE"
+    printf '%s\n' "$row" >> "$ERROR_LOG_FILE"
 }
 
 take_lock() {
@@ -66,7 +79,7 @@ acquire_lock_or_exit() {
     lock_pid=$(cat "$LOCK_DIR/pid" 2>/dev/null)
     if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null && ps -p "$lock_pid" -o command= 2>/dev/null | grep -q "run.sh"; then
         echo "=== Run skipped: previous run (PID $lock_pid) still active ($TIMESTAMP) ===" >> "$LOG_FILE"
-        log_error_to_obsidian "Run skipped: previous run (PID $lock_pid) still active" "all"
+        log_error_row "Run skipped: previous run (PID $lock_pid) still active" "all"
         exit 0
     fi
 
@@ -75,7 +88,7 @@ acquire_lock_or_exit() {
     take_lock && return
 
     echo "=== Run skipped: could not acquire lock ($TIMESTAMP) ===" >> "$LOG_FILE"
-    log_error_to_obsidian "Run skipped: could not acquire lock" "all"
+    log_error_row "Run skipped: could not acquire lock" "all"
     exit 0
 }
 
@@ -103,6 +116,10 @@ export CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS=5400000
 # errors, while still appending it to the rolling error log as before.
 RUN_ERR_FILE=$(mktemp)
 
+# The orchestrator resolves agents.config.json, .ledger/, and envs/ relative to
+# its working directory, so run it from the workspace regardless of the caller.
+cd "$SCRIPT_DIR" || exit 1
+
 direnv exec "$SCRIPT_DIR" claude \
     -p "Process Github issues and delegate to subagents" \
     --dangerously-skip-permissions \
@@ -114,11 +131,11 @@ EXIT_CODE=$?
 cat "$RUN_ERR_FILE" >> "$ERR_FILE"
 echo "=== Run ended: $(date '+%Y-%m-%d %H:%M:%S') (exit: $EXIT_CODE) ===" >> "$LOG_FILE"
 
-# Surface run-level failures to the consolidated Obsidian error log (repo "all"
+# Surface run-level failures to the consolidated error table (repo "all"
 # since these are environment-wide, not tied to one repo). The background-task
 # termination still exits 0, so it must be detected by message, not exit code.
 if grep -q "Background tasks still running" "$RUN_ERR_FILE"; then
-    log_error_to_obsidian "Run terminated early: a background subagent was killed at the wait ceiling before finishing, so its PR was likely never opened. Raise CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS if this recurs." "all"
+    log_error_row "Run terminated early: a background subagent was killed at the wait ceiling before finishing, so its PR was likely never opened. Raise CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS if this recurs." "all"
 fi
 
 # An expired/unrefreshable OAuth session makes `claude -p` exit 1 within ~1s
@@ -128,16 +145,16 @@ fi
 # Both message checks are gated on a non-zero exit: a successful run can echo
 # these strings into the log (e.g. by printing this script), which is not a failure.
 if [ "$EXIT_CODE" -ne 0 ] && tail -50 "$LOG_FILE" | grep -qa "OAuth session expired\|authentication_failed"; then
-    log_error_to_obsidian "Auth expired: claude could not authenticate (OAuth session expired or token revoked). Re-run \`claude setup-token\`, update CLAUDE_CODE_OAUTH_TOKEN in .envrc, then run \`direnv allow\` in the agents dir (editing .envrc revokes direnv approval, so run.sh can't load it). No repos were processed." "all"
+    log_error_row "Auth expired: claude could not authenticate (OAuth session expired or token revoked). Re-run \`claude setup-token\`, update CLAUDE_CODE_OAUTH_TOKEN in .envrc, then run \`direnv allow\` in the agents dir (editing .envrc revokes direnv approval, so run.sh can't load it). No repos were processed." "all"
 elif [ "$EXIT_CODE" -ne 0 ] && tail -50 "$LOG_FILE" | grep -qa "You've hit your session limit"; then
     # A 5-hour session-limit rejection makes `claude -p` exit 1, but it's an
     # expected throttle, not a crash. Log it as an informational skip so it stops
     # masquerading as a generic abnormal exit. The next scheduled run in a fresh
     # window retries automatically. Frequent rows here mean the run cadence
     # outpaces the plan's 5-hour budget — space the runs out.
-    log_error_to_obsidian "Rate limited: hit the 5-hour session limit; run stopped without finishing. Not a failure — the next run in a fresh window retries. Recurring rows mean the cadence exceeds the plan's 5-hour budget." "all"
+    log_error_row "Rate limited: hit the 5-hour session limit; run stopped without finishing. Not a failure — the next run in a fresh window retries. Recurring rows mean the cadence exceeds the plan's 5-hour budget." "all"
 elif [ "$EXIT_CODE" -ne 0 ]; then
-    log_error_to_obsidian "Run exited abnormally (exit code $EXIT_CODE); see agents-error.log for details." "all"
+    log_error_row "Run exited abnormally (exit code $EXIT_CODE); see agents-error.log for details." "all"
 fi
 
 rm -f "$RUN_ERR_FILE"
