@@ -1,6 +1,6 @@
 # agents
 
-An unattended Claude Code orchestrator that maintains eight GitHub repositories for one developer. Five times a day it reads each repo's issues and pull requests, delegates the work to subagents that each clone, fix, test, review, and open a PR, and requests a human review only once CI is green. The human merges; the agent does everything up to that point.
+An unattended Claude Code orchestrator that maintains a fleet of GitHub repositories for one developer. Five times a day it reads each repo's issues and pull requests, delegates the work to subagents that each clone, fix, test, review, and open a PR, and requests a human review only once CI is green. The human merges; the agent does everything up to that point.
 
 This repo is published as a working reference, not a product. It runs my real projects, it is opinionated about the stack it targets, and it assumes macOS. If you want to run your own, everything installation-specific is in one config file (see [Running your own](#running-your-own)).
 
@@ -40,17 +40,20 @@ Every worker runs the same checks CI runs before it pushes, then gets an indepen
 - **`blocked`** stops the agent cold on an item. The human clears it.
 - **Assignment is a handoff.** An item assigned to the human is skipped. Reassigning a `blocked` item to the agent account with a question gets it researched and answered, never worked.
 - **Digests are a gate.** The agent proposes improvements; only the boxes the human ticks become issues.
-- **Usage limits.** The run skips or stops early at fixed usage thresholds.
+- **Session limits.** When a run hits the plan's session limit, `run.sh` records it as a rate limit rather than a crash, and the next scheduled run picks up where it left off.
 
 ## Safety model
 
 The orchestrator and its workers run unattended with `--dangerously-skip-permissions` and a GitHub token that can push workflow files. That is a deliberate tradeoff for an unattended box, and it makes untrusted text the main risk. The controls (see `## Untrusted Input` in [CLAUDE.md](CLAUDE.md)):
 
-- **Untrusted text is filtered before it reaches a worker.** PR comments are kept only from repo owners, members, collaborators, and an explicit bot allowlist. A stranger's comment on a public repo never becomes instructions.
-- **Issues of untrusted origin run with restricted scope.** Issues that came from end-user feedback, Sentry, or an outside author tell the worker not to touch `.github/`, env files, secrets, deploy config, or dependencies. If the fix needs any of those, a human decides.
+- **Untrusted text is filtered before it reaches a worker.** Inline comments, review bodies, and conversation comments all go through one committed filter ([`filters/trusted-comments.jq`](filters/trusted-comments.jq)) that keeps only repo owners, members, and collaborators. No bots are trusted by default: a bot that answers mentions repeats whatever a stranger asked it to say. Workers are told never to fetch comments themselves.
+- **Untrusted-origin work is pushed by the orchestrator, not the worker.** For issues from end-user feedback, Sentry, or an outside author, the worker commits but never pushes. The orchestrator checks the change set with [`scripts/check-protected-paths.sh`](scripts/check-protected-paths.sh) and only pushes if it leaves `.github/`, env files, deploy config, `package.json`, and lockfiles alone; otherwise a human decides.
+- **The feedback classifier has nothing to act with.** Raw end-user text is classified in a `claude -p` session limited to read-only tools inside a throwaway clone: no shell, no network, no files outside the clone.
 - **Workers never see production credentials.** This box only holds local and e2e decryption keys; it never deploys.
 - **Every e2e run gets a throwaway Neon database branch**, deleted unconditionally afterwards.
-- **Subagents never write to the error log or the site-scan directory.** Only the orchestrator and `run.sh` do.
+- **Workers write only inside their own `/tmp` clone.** Only the orchestrator and `run.sh` write logs and ledgers.
+
+What this does not cover: workers run as the same OS user as everything else on the box, so the prompt rules and gates above stop a worker that has been *misled*, not one that has been *hijacked* into actively attacking. Anything that user can read, a hijacked worker can read. Keep credentials on the box down to the agent account's own; in particular, don't stay logged in to `gh` as the human reviewer, or a hijacked worker could approve and merge its own PRs.
 
 ## Reading this repo
 
@@ -79,7 +82,7 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
 
 - macOS (launchd, `~/Library/Logs`)
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) on a plan with enough usage for unattended runs
-- `gh`, `git`, `jq`, `direnv`, Node and `npx`
+- `gh`, `git`, `jq`, `direnv`, `python3`, Node and `npx` (`run.sh` checks for `jq` and `node` before every run)
 - A separate GitHub account for the agent, with write access to every target repo (collaborator or org member) and a token scoped `repo` and `workflow`
 
 ### Setup
@@ -104,10 +107,11 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
    ```bash
    sed -e "s#__WORKSPACE__#$PWD#g" -e "s#__HOME__#$HOME#g" -e "s#__PATH__#$PATH#g" \
      launchd/com.grimicorn.agents.plist > ~/Library/LaunchAgents/com.grimicorn.agents.plist
+   launchctl bootout "gui/$(id -u)/com.grimicorn.agents" 2>/dev/null || true   # re-installs: unload the old job first
    launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.grimicorn.agents.plist
    ```
 
-   Rename the label if you like; `npm run launch` kicks it by that label.
+   To use your own label, change it in three places together or `npm run launch` stops working: the plist's `Label`, the installed file name (`~/Library/LaunchAgents/<label>.plist`), and the `launch` script in `package.json`.
 
 5. `npm run launch` starts a run immediately; `npm run logs` tails it.
 

@@ -126,9 +126,10 @@ echo "=== Run started: $TIMESTAMP ===" >> "$ERR_FILE"
 # once the background-wait ceiling is hit (default 600000ms = 10 min). A clone +
 # tests + e2e + 3-round review + push + PR takes far longer than 10 min, so the
 # worker was being killed before it could open the PR. Raise the ceiling to 90
-# min: well above the slowest task, but ~30 min under the 2-hour run cadence so a
-# wedged run self-terminates before the next scheduled run and never holds the
-# lock across slots. Both names are set to cover Claude Code's env-var naming
+# min: well above the slowest task, and well inside the shortest gap between
+# scheduled runs (4 hours, 21:05 to 01:05 in the launchd template), so a wedged
+# run self-terminates before the next one starts and never holds the lock across
+# slots. Both names are set to cover Claude Code's env-var naming
 # drift; an unrecognized var is harmless.
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=5400000
 export CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS=5400000
