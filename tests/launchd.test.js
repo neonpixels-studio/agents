@@ -1,23 +1,12 @@
-import { execFileSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
+import { parse as parsePlistXml } from 'plist';
 import { describe, expect, it } from 'vitest';
 import { readRepoFile, repoPath } from './support/repo-files.js';
 
 const PLACEHOLDERS = ['__WORKSPACE__', '__HOME__', '__PATH__'];
 
-// plistlib is in the Python standard library, so this parses the template the
-// same way on macOS and on Linux CI runners.
 function parsePlist(relativePath) {
-  const output = execFileSync(
-    'python3',
-    [
-      '-c',
-      'import json, plistlib, sys; print(json.dumps(plistlib.load(open(sys.argv[1], "rb"))))',
-      repoPath(relativePath),
-    ],
-    { encoding: 'utf8' },
-  );
-  return JSON.parse(output);
+  return parsePlistXml(readRepoFile(relativePath));
 }
 
 const templates = readdirSync(repoPath('launchd')).map(

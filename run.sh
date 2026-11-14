@@ -115,7 +115,7 @@ load_error_log_path
 validate_config_or_abort
 acquire_lock_or_exit
 
-python3 "$SCRIPT_DIR/trim_logs.py" "$LOG_FILE" "$ERR_FILE"
+node "$SCRIPT_DIR/scripts/trim-logs.mjs" "$LOG_FILE" "$ERR_FILE"
 
 echo "" >> "$LOG_FILE"
 echo "=== Run started: $TIMESTAMP ===" >> "$LOG_FILE"
