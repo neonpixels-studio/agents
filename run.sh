@@ -7,18 +7,7 @@ TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 LOCK_DIR="$LOG_DIR/.agents-run.lock"
 CONFIG_FILE="$SCRIPT_DIR/agents.config.json"
-
-# Every per-installation value lives in agents.config.json. Fail loudly (to the
-# rolling log, since the error table path itself comes from the config) rather
-# than run the orchestrator against a missing or broken config.
-if ! jq -e . "$CONFIG_FILE" >/dev/null 2>&1; then
-    echo "=== Run aborted: $CONFIG_FILE is missing or not valid JSON ($TIMESTAMP) ===" >> "$LOG_FILE"
-    exit 1
-fi
-
-# `errorLog: null` disables the markdown error table; a leading ~ means $HOME.
-ERROR_LOG_FILE=$(jq -r '.errorLog // empty' "$CONFIG_FILE")
-ERROR_LOG_FILE="${ERROR_LOG_FILE/#\~/$HOME}"
+ERROR_LOG_FILE=""
 
 ordinal_date() {
     local day month year suffix
@@ -53,7 +42,6 @@ log_error_row() {
     # anchor line when it exists. The row is passed via the environment (ROW) so
     # awk doesn't reinterpret backslash escapes like `\|` inside the note.
     if grep -qxF '^errorTable' "$ERROR_LOG_FILE"; then
-        local tmp
         tmp=$(mktemp)
         ROW="$row" awk '$0 == "^errorTable" { print ENVIRON["ROW"] } { print }' \
             "$ERROR_LOG_FILE" > "$tmp" && mv "$tmp" "$ERROR_LOG_FILE"
@@ -64,6 +52,35 @@ log_error_row() {
     # so the new row never joins the last existing line.
     [ -n "$(tail -c1 "$ERROR_LOG_FILE")" ] && printf '\n' >> "$ERROR_LOG_FILE"
     printf '%s\n' "$row" >> "$ERROR_LOG_FILE"
+}
+
+abort_run() {
+    echo "=== Run aborted: $1 ($TIMESTAMP) ===" >> "$LOG_FILE"
+    exit 1
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 && return 0
+    abort_run "$1 is not on PATH ($PATH); install it or add its directory to the launchd plist's PATH"
+}
+
+# `errorLog: null` disables the markdown error table; a leading ~ means $HOME.
+# Best effort: this also runs before validation so an invalid config can still
+# report itself in the table the human actually watches.
+load_error_log_path() {
+    ERROR_LOG_FILE=$(jq -r '.errorLog | strings' "$CONFIG_FILE" 2>/dev/null)
+    ERROR_LOG_FILE="${ERROR_LOG_FILE/#\~/$HOME}"
+}
+
+# Every per-installation value lives in agents.config.json, checked by the same
+# validator CI runs. A typo such as `sentry.enable` aborts the run instead of
+# silently disabling a phase.
+validate_config_or_abort() {
+    local config_errors
+    config_errors=$(node "$SCRIPT_DIR/scripts/validate-config.mjs" "$CONFIG_FILE" 2>&1) && return 0
+    echo "$config_errors" >> "$LOG_FILE"
+    log_error_row "Run aborted: agents.config.json is invalid: $(head -1 <<< "$config_errors") (see agents.log for all errors)" "all"
+    abort_run "$CONFIG_FILE is invalid"
 }
 
 take_lock() {
@@ -92,6 +109,10 @@ acquire_lock_or_exit() {
     exit 0
 }
 
+require_command jq
+require_command node
+load_error_log_path
+validate_config_or_abort
 acquire_lock_or_exit
 
 python3 "$SCRIPT_DIR/trim_logs.py" "$LOG_FILE" "$ERR_FILE"
@@ -105,9 +126,10 @@ echo "=== Run started: $TIMESTAMP ===" >> "$ERR_FILE"
 # once the background-wait ceiling is hit (default 600000ms = 10 min). A clone +
 # tests + e2e + 3-round review + push + PR takes far longer than 10 min, so the
 # worker was being killed before it could open the PR. Raise the ceiling to 90
-# min: well above the slowest task, but ~30 min under the 2-hour run cadence so a
-# wedged run self-terminates before the next scheduled run and never holds the
-# lock across slots. Both names are set to cover Claude Code's env-var naming
+# min: well above the slowest task, and well inside the shortest gap between
+# scheduled runs (4 hours, 21:05 to 01:05 in the launchd template), so a wedged
+# run self-terminates before the next one starts and never holds the lock across
+# slots. Both names are set to cover Claude Code's env-var naming
 # drift; an unrecognized var is harmless.
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=5400000
 export CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS=5400000

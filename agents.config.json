@@ -3,11 +3,7 @@
     "human": "grimicorn",
     "agent": "grimicorn-agent"
   },
-  "trustedBots": [
-    "coderabbitai[bot]",
-    "github-actions[bot]",
-    "dependabot[bot]"
-  ],
+  "trustedBots": [],
   "repos": {
     "active": [
       "https://github.com/neonpixels-studio/dashboard",
