@@ -5,7 +5,7 @@
   "scripts": {
     "launch": "launchctl kickstart -k gui/$(id -u)/com.grimicorn.agents",
     "logs": "tail -f ~/Library/Logs/agents.log",
-    "lint": "prettier --check . && shellcheck run.sh",
+    "lint": "prettier --check . && shellcheck run.sh scripts/*.sh",
     "lint:fix": "prettier --write .",
     "test": "vitest",
     "test:ci": "vitest run",

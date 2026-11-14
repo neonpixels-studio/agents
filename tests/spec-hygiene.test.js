@@ -19,7 +19,13 @@ const SPEC_FILES = [
     (file) => `docs/${file}`,
   ),
 ];
-const RUNTIME_FILES = [...SPEC_FILES, 'run.sh'];
+const RUNTIME_FILES = [
+  ...SPEC_FILES,
+  'run.sh',
+  'filters/trusted-comments.jq',
+  'scripts/check-protected-paths.sh',
+  'scripts/validate-config.mjs',
+];
 const MACHINE_PATH_FRAGMENTS = ['/Users/', '/Volumes/', 'iCloud~md~obsidian'];
 
 function installationValues() {

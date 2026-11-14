@@ -101,7 +101,7 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
    | `sentry` | `enabled`, the org slug, and a repo-to-project map. |
    | `siteScans` | `enabled`, the directory holding `<domain> - WCAG.md` / `<domain> - SEO.md` scan files, and a repo-to-domain map. |
 
-2. Run `npm install` (installs the test tooling and the pre-commit hook).
+2. Run `npm install`. It installs the test tooling and the pre-commit hook, and from then on every commit in this directory runs lint and tests. That needs `jq`, `python3`, and `node` on the PATH; `shellcheck` and `gitleaks` are optional locally (skipped with a notice, enforced in CI). After a pull that changes `package.json` or the lockfile, the post-merge hook only reminds you to run `npm ci`; it never installs on its own.
 3. Copy `.envrc.sample` to `.envrc`, fill it in (`claude setup-token` for the OAuth token), and run `direnv allow`.
 4. For each repo with e2e tests, put its dotenvx decryption keys in `envs/<repo-name>.keys` (gitignored).
 5. Install the schedule:
@@ -121,20 +121,21 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
 
 - **The usage meters aren't readable from a headless run.** The pre-run and mid-run usage checks in CLAUDE.md are specified but can't actually be evaluated, so `run.sh` catches the session-limit rejection after the fact instead.
 - **macOS only.** The log paths and the scheduler assume it.
+- **CI proves Linux, not macOS.** The `run.sh` tests run on `ubuntu-latest`, so they can't catch BSD-vs-GNU differences in `date`, `ps`, or `sed`. The pre-commit hook runs the same suite on the Mac before every commit, which is the only macOS coverage; there is no macOS CI job, to save billed minutes.
 - **The stack is opinionated.** Swapping out GitHub, dotenvx, or Neon means editing the spec, not the config.
 
 ## Development
 
 The program is markdown, so the tests guard what a markdown linter can't:
 
-- **The trust boundary.** The jq filters CLAUDE.md and the scan spec tell the orchestrator to use are pulled out of the docs and run against fixture comments, so weakening a filter in prose fails CI.
+- **The trust boundary.** `filters/trusted-comments.jq` is tested directly, and the exact pipelines CLAUDE.md and the scan spec tell the orchestrator to run are pulled out of the docs and executed against fixture comments, so weakening one in prose fails CI. `scripts/check-protected-paths.sh` is tested against the paths it must block and lookalikes it must allow.
 - **Spec hygiene.** No GitHub logins, Sentry org, or machine paths hardcoded outside `agents.config.json`; every `(see Section)` names a heading that exists; README links resolve.
-- **Config.** `agents.config.json` is validated: real GitHub URLs, no repo both active and disabled, Sentry and site-scan maps only reference known repos.
-- **`run.sh`.** Runs in a sandbox with stubbed `claude` and `direnv` to check the config guard, the error table (including the `^errorTable` anchor), lock handling, and detection of failures that exit quietly.
+- **Config.** `scripts/validate-config.mjs` checks `agents.config.json`: real GitHub URLs, no repo both active and disabled, booleans where switches belong, Sentry and site-scan maps only reference known repos. `run.sh` runs the same validator before every run.
+- **`run.sh`.** Runs in a sandbox with stubbed `claude` and `direnv` to check the tool and config guards, the error table (including the `^errorTable` anchor), lock handling, and detection of failures that exit quietly.
 - **`trim_logs.py` and the launchd template.**
 
 ```bash
-npm run lint     # prettier (code and JSON only) + shellcheck run.sh
+npm run lint     # prettier (code and JSON only) + shellcheck run.sh scripts/*.sh
 npm test         # vitest
 ```
 

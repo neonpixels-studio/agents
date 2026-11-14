@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readConfig } from './support/repo-files.js';
-import { validateConfig } from './support/validate-config.js';
+import { validateConfig } from '../scripts/validate-config.mjs';
 
 function withChange(change) {
   const config = structuredClone(readConfig());

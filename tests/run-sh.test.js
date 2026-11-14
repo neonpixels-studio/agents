@@ -2,8 +2,10 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { readConfig } from './support/repo-files.js';
 import {
   createSandbox,
+  limitedPath,
   lockDir,
   readSandboxFile,
   removeSandbox,
@@ -19,7 +21,13 @@ afterEach(() => {
   removeSandbox(sandbox);
 });
 
-function setUp(config = { errorLog: ERROR_LOG }) {
+const validConfig = (overrides = {}) => ({
+  ...readConfig(),
+  errorLog: ERROR_LOG,
+  ...overrides,
+});
+
+function setUp(config = validConfig()) {
   sandbox = createSandbox({ config });
   return sandbox;
 }
@@ -44,6 +52,35 @@ describe('run.sh config guard', () => {
       expect(claudeRan()).toBe(false);
     },
   );
+
+  it('aborts and reports when the config fails validation', () => {
+    const config = validConfig();
+    config.sentry = { enable: true, org: 'typo', projects: {} };
+    setUp(config);
+
+    const result = runRunSh(sandbox);
+
+    expect(result.status).toBe(1);
+    expect(runLog()).toContain('sentry.enabled must be a boolean');
+    expect(errorTable()).toContain(
+      'Run aborted: agents.config.json is invalid: sentry.enabled must be a boolean',
+    );
+    expect(claudeRan()).toBe(false);
+  });
+
+  it.each([
+    ['jq', ['date', 'dirname']],
+    ['node', ['date', 'dirname', 'jq']],
+  ])('aborts with its own message when %s is missing', (tool, available) => {
+    setUp();
+
+    const result = runRunSh(sandbox, {}, limitedPath(sandbox, available));
+
+    expect(result.status).toBe(1);
+    expect(runLog()).toContain(`Run aborted: ${tool} is not on PATH`);
+    expect(runLog()).not.toContain('invalid');
+    expect(claudeRan()).toBe(false);
+  });
 
   it('starts claude from the workspace even when called from elsewhere', () => {
     setUp();
@@ -92,7 +129,7 @@ describe('run.sh error table', () => {
   });
 
   it('writes no table at all when errorLog is null', () => {
-    setUp({ errorLog: null });
+    setUp(validConfig({ errorLog: null }));
 
     const result = runRunSh(sandbox, { exitCode: 3 });
 
