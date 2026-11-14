@@ -187,6 +187,26 @@ describe('run.sh failure detection', () => {
   });
 });
 
+describe('run.sh log rotation', () => {
+  it('trims runs older than seven days from both logs before starting', () => {
+    setUp();
+    const oldRun = '=== Run started: 2001-01-01 00:00:00 ===\nancient output\n';
+    writeFileSync(join(sandbox.home, 'Library', 'Logs', 'agents.log'), oldRun);
+    writeFileSync(
+      join(sandbox.home, 'Library', 'Logs', 'agents-error.log'),
+      oldRun,
+    );
+
+    runRunSh(sandbox);
+
+    expect(runLog()).not.toContain('ancient output');
+    expect(
+      readSandboxFile(sandbox, 'Library', 'Logs', 'agents-error.log'),
+    ).not.toContain('ancient output');
+    expect(claudeRan()).toBe(true);
+  });
+});
+
 describe('run.sh lock', () => {
   it('removes a stale lock left by a dead process and runs', () => {
     setUp();

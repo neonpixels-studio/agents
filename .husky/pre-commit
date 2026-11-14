@@ -1,8 +1,8 @@
 set -e
 
-# The tests run run.sh, trim_logs.py, and the spec's jq pipelines, so these are
+# The tests run run.sh, the Node scripts, and the spec's jq pipelines, so these are
 # hard requirements. Fail with a clear message instead of a confusing test error.
-for tool in jq python3 node; do
+for tool in jq node; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "pre-commit: $tool is required for the tests but is not on PATH."
     exit 1

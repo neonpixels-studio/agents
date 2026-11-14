@@ -25,6 +25,7 @@ const RUNTIME_FILES = [
   'filters/trusted-comments.jq',
   'scripts/check-protected-paths.sh',
   'scripts/validate-config.mjs',
+  'scripts/trim-logs.mjs',
 ];
 const MACHINE_PATH_FRAGMENTS = ['/Users/', '/Volumes/', 'iCloud~md~obsidian'];
 

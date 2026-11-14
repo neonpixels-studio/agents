@@ -83,7 +83,7 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
 
 - macOS (launchd, `~/Library/Logs`)
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) on a plan with enough usage for unattended runs
-- `gh`, `git`, `jq`, `direnv`, `python3`, Node and `npx` (`run.sh` checks for `jq` and `node` before every run)
+- `gh`, `git`, `jq`, `direnv`, Node and `npx` (`run.sh` checks for `jq` and `node` before every run)
 - A separate GitHub account for the agent, with write access to every target repo (collaborator or org member) and a token scoped `repo` and `workflow`
 
 ### Setup
@@ -101,7 +101,7 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
    | `sentry` | `enabled`, the org slug, and a repo-to-project map. |
    | `siteScans` | `enabled`, the directory holding `<domain> - WCAG.md` / `<domain> - SEO.md` scan files, and a repo-to-domain map. |
 
-2. Run `npm install`. It installs the test tooling and the pre-commit hook, and from then on every commit in this directory runs lint and tests. That needs `jq`, `python3`, and `node` on the PATH; `shellcheck` and `gitleaks` are optional locally (skipped with a notice, enforced in CI). After a pull that changes `package.json` or the lockfile, the post-merge hook only reminds you to run `npm ci`; it never installs on its own.
+2. Run `npm install`. It installs the test tooling and the pre-commit hook, and from then on every commit in this directory runs lint and tests. That needs `jq` and `node` on the PATH; `shellcheck` and `gitleaks` are optional locally (skipped with a notice, enforced in CI). After a pull that changes `package.json` or the lockfile, the post-merge hook only reminds you to run `npm ci`; it never installs on its own.
 3. Copy `.envrc.sample` to `.envrc`, fill it in (`claude setup-token` for the OAuth token), and run `direnv allow`.
 4. For each repo with e2e tests, put its dotenvx decryption keys in `envs/<repo-name>.keys` (gitignored).
 5. Install the schedule:
@@ -132,7 +132,7 @@ The program is markdown, so the tests guard what a markdown linter can't:
 - **Spec hygiene.** No GitHub logins, Sentry org, or machine paths hardcoded outside `agents.config.json`; every `(see Section)` names a heading that exists; README links resolve.
 - **Config.** `scripts/validate-config.mjs` checks `agents.config.json`: real GitHub URLs, no repo both active and disabled, booleans where switches belong, Sentry and site-scan maps only reference known repos. `run.sh` runs the same validator before every run.
 - **`run.sh`.** Runs in a sandbox with stubbed `claude` and `direnv` to check the tool and config guards, the error table (including the `^errorTable` anchor), lock handling, and detection of failures that exit quietly.
-- **`trim_logs.py` and the launchd template.**
+- **`scripts/trim-logs.mjs` and the launchd template.**
 
 ```bash
 npm run lint     # prettier (code and JSON only) + shellcheck run.sh scripts/*.sh

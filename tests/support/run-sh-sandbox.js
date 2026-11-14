@@ -56,8 +56,8 @@ export function createSandbox({ config } = {}) {
     join(sandbox.workspace, 'scripts', 'validate-config.mjs'),
   );
   copyFileSync(
-    repoPath('trim_logs.py'),
-    join(sandbox.workspace, 'trim_logs.py'),
+    repoPath('scripts/trim-logs.mjs'),
+    join(sandbox.workspace, 'scripts', 'trim-logs.mjs'),
   );
   writeExecutable(join(sandbox.bin, 'direnv'), DIRENV_STUB);
   writeExecutable(join(sandbox.bin, 'claude'), CLAUDE_STUB);
