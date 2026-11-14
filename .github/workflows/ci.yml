@@ -1,0 +1,30 @@
+name: CI
+
+# No branch filter on pull_request: changes here often land as stacked PRs whose
+# base is another PR branch, and those need CI too.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # shellcheck, jq, and python3 ship on ubuntu-latest; the tests use all three.
+      - run: npm run lint
+      - run: npm run test:ci

@@ -1,0 +1,29 @@
+set -e
+
+# The tests run run.sh, trim_logs.py, and the spec's jq pipelines, so these are
+# hard requirements. Fail with a clear message instead of a confusing test error.
+for tool in jq python3 node; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "pre-commit: $tool is required for the tests but is not on PATH."
+    exit 1
+  fi
+done
+
+# shellcheck is a lint layer CI enforces, so like gitleaks it is skipped with a
+# notice locally rather than blocking the commit.
+if command -v shellcheck >/dev/null 2>&1; then
+  npm run lint
+else
+  echo "shellcheck not found — skipping shell lint (CI will still enforce it). Install: brew install shellcheck"
+  npx prettier --check .
+fi
+
+npm run test:ci
+
+# Secret scanning on staged changes only (deterministic-scanner layer).
+# Skipped with a notice if gitleaks is not installed locally; CI still enforces it.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --staged --redact --config .gitleaks.toml
+else
+  echo "gitleaks not found — skipping local secret scan (CI will still enforce it). Install: https://github.com/gitleaks/gitleaks#installing"
+fi

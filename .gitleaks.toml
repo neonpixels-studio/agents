@@ -1,0 +1,5 @@
+# Gitleaks configuration for the agents orchestrator.
+# Docs: https://github.com/gitleaks/gitleaks#configuration
+
+[extend]
+useDefault = true

@@ -2,3 +2,4 @@
 .DS_Store
 /envs/
 /.ledger/
+node_modules/
