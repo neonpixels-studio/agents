@@ -30,6 +30,7 @@ export function validateConfig(config) {
     ...validateRepos(config.repos),
     ...validateErrorLog(config.errorLog),
     ...validateCrossRepoDependencies(config.crossRepoDependencies, knownRepos),
+    ...validateImprovementDigests(config.improvementDigests),
     ...validateSentry(config.sentry, knownRepos),
     ...validateSiteScans(config.siteScans, knownRepos),
   ];
@@ -153,6 +154,17 @@ function validateRepoMap(map, knownRepos, key, isValidValue) {
     ...unknownRepoErrors(Object.keys(map), knownRepos, key),
     ...invalidValues,
   ];
+}
+
+function validateImprovementDigests(improvementDigests) {
+  if (
+    !isObject(improvementDigests) ||
+    typeof improvementDigests.enabled !== 'boolean'
+  ) {
+    return ['improvementDigests.enabled must be a boolean'];
+  }
+
+  return [];
 }
 
 function validateSentry(sentry, knownRepos) {

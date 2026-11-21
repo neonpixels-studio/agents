@@ -62,6 +62,11 @@ describe('validateConfig', () => {
       'needs a contractSurface',
     ],
     [
+      'improvement digests without an enabled flag',
+      (config) => delete config.improvementDigests.enabled,
+      'improvementDigests.enabled must be a boolean',
+    ],
+    [
       'Sentry enabled without an org',
       (config) => (config.sentry.org = ''),
       'sentry.org is required',

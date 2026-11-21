@@ -62,6 +62,8 @@ Runs every run as step 2b, per repo. **The human closing a digest is the trigger
 
 Per repo, independent of promotion.
 
+**Scope:** skip the whole phase unless `improvementDigests.enabled` is true in `agents.config.json`, and report "disabled in config". Phases 0, 1, and 4 keep running while it is off, so suggestions and feedback still land in the ledger as `held` and an already-open digest can still be promoted. They ride the first digest generated after it is turned back on.
+
 0. Skip if either guard trips (already generated today, or an open digest exists); note the reason.
 1. Read the ledger and open issue titles (the "already known" set) plus the current **held** set (every `id` whose latest record is `held`) — held items carry forward and re-enter ranking. This held set now includes Phase 0 intake (`source: pr | human`); those enter the ranker pool exactly like any carried candidate.
 2. Spawn a **generator subagent on Sonnet** (read-only; no push/PR/issue) with the prompt below. If the repo is a cross-repo dependent, add the read-only reference-clone instruction and tell it to ground CLI/consumer candidates in the dependency's contract. Held titles are in the exclusion list, so the generator won't re-derive them — they reach the ranker via the orchestrator.
