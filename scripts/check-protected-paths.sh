@@ -14,6 +14,8 @@ PROTECTED_PATTERNS=(
     '(^|/)netlify\.toml$'
     '(^|/)package\.json$'
     '(^|/)(package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock)$'
+    '(^|/)pnpm-workspace\.yaml$'
+    '^\.changeset/config\.json$'
 )
 
 joined_pattern=$(IFS='|'; echo "${PROTECTED_PATTERNS[*]}")

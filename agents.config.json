@@ -13,7 +13,8 @@
       "https://github.com/neonpixels-studio/markpost",
       "https://github.com/neonpixels-studio/markpost-cli",
       "https://github.com/neonpixels-studio/basin",
-      "https://github.com/neonpixels-studio/farflung"
+      "https://github.com/neonpixels-studio/farflung",
+      "https://github.com/neonpixels-studio/packages"
     ],
     "disabled": []
   },

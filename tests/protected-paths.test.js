@@ -30,6 +30,8 @@ describe('scripts/check-protected-paths.sh', () => {
     'package-lock.json',
     'npm-shrinkwrap.json',
     'pnpm-lock.yaml',
+    'pnpm-workspace.yaml',
+    '.changeset/config.json',
     'yarn.lock',
   ])('blocks %s', (path) => {
     expect(checkPaths(['src/app.ts', path])).toEqual({
