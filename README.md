@@ -97,6 +97,7 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
    | `trustedBots` | Bot logins whose PR comments count as review feedback. |
    | `repos.active` / `repos.disabled` | Target repo URLs, processed in order. Move a URL to `disabled` to pause it. A repo with a `pnpm-workspace.yaml` is handled as a pnpm workspace (see Workspace Repositories in `CLAUDE.md`); no config is needed. |
    | `crossRepoDependencies` | Repos that build against another repo's API, with the read-only contract surface. |
+   | `sharedPackages` | `repo` (one of the configured repos) and npm `scope` of the packages the other repos share, or `null`. Workers on the other repos report package problems in their PR, and intake records them against the packages repo (see Package Suggestions in `CLAUDE.md`). |
    | `errorLog` | Path to a markdown error table, or `null` to disable it. A leading `~` is expanded. |
    | `improvementDigests` | `enabled`. Set to `false` to stop generating new improvement digests; intake, promotion of an already-open digest, and feedback triage keep running. |
    | `sentry` | `enabled`, the org slug, and a repo-to-project map. |

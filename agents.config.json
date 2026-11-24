@@ -25,6 +25,10 @@
       "contractSurface": "`server/api/` (handlers), `server/types/api.types.ts` (request/response contract), `postman/collections/api/` (specs + `definition.yaml`). `markpost-cli` mirrors markpost's `api.types.ts` and `markdown.ts` by hand, so treat markpost as the source of truth for both."
     }
   ],
+  "sharedPackages": {
+    "repo": "packages",
+    "scope": "@neon-pixels"
+  },
   "errorLog": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Claude/Errors.md",
   "improvementDigests": {
     "enabled": false

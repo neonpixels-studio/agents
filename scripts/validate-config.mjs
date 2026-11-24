@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 const GITHUB_REPO_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/;
 const BOT_LOGIN = /^[\w-]+\[bot\]$/;
 const DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i;
+const NPM_SCOPE = /^@[a-z0-9][a-z0-9._-]*$/;
 
 const isNonEmptyString = (value) =>
   typeof value === 'string' && value.trim() !== '';
@@ -30,6 +31,7 @@ export function validateConfig(config) {
     ...validateRepos(config.repos),
     ...validateErrorLog(config.errorLog),
     ...validateCrossRepoDependencies(config.crossRepoDependencies, knownRepos),
+    ...validateSharedPackages(config.sharedPackages, knownRepos),
     ...validateImprovementDigests(config.improvementDigests),
     ...validateSentry(config.sentry, knownRepos),
     ...validateSiteScans(config.siteScans, knownRepos),
@@ -139,6 +141,27 @@ function validateCrossRepoDependencies(dependencies, knownRepos) {
   return dependencies.flatMap((dependency) =>
     validateDependency(dependency, knownRepos),
   );
+}
+
+function validateSharedPackages(sharedPackages, knownRepos) {
+  if (sharedPackages === null) {
+    return [];
+  }
+
+  if (!isObject(sharedPackages)) {
+    return ['sharedPackages must be an object or null'];
+  }
+
+  const invalidScope =
+    isNonEmptyString(sharedPackages.scope) &&
+    NPM_SCOPE.test(sharedPackages.scope)
+      ? []
+      : ['sharedPackages.scope must be an npm scope such as @acme'];
+
+  return [
+    ...unknownRepoErrors([sharedPackages.repo], knownRepos, 'sharedPackages'),
+    ...invalidScope,
+  ];
 }
 
 function validateRepoMap(map, knownRepos, key, isValidValue) {

@@ -14,7 +14,7 @@ Read `agents.config.json` in this workspace before doing anything else. If it is
 | `<error-log>` | `errorLog` | Markdown error table (see Error Logging). `null` disables it. |
 | `<sentry-org>` | `sentry.org` | Sentry organization slug. |
 
-Other keys: `trustedBots` (see Untrusted Input), `repos` (below), `crossRepoDependencies` (see Cross-Repo Dependencies), `improvementDigests.enabled` (Phase 2), `sentry.enabled`/`sentry.projects` (Phase 3), `siteScans.enabled`/`siteScans.vaultDir`/`siteScans.sites` (Phase 5). Expand a leading `~` in any path to `$HOME`, and always double-quote paths in commands: they can contain spaces (`siteScans.vaultDir` does). `run.sh` validates the config with `scripts/validate-config.mjs` before every run and aborts on any error, so a disabled integration really is disabled, not a typo. A disabled integration's phase is skipped, with "disabled in config" in the report.
+Other keys: `trustedBots` (see Untrusted Input), `repos` (below), `crossRepoDependencies` (see Cross-Repo Dependencies), `sharedPackages` (see Package Suggestions), `improvementDigests.enabled` (Phase 2), `sentry.enabled`/`sentry.projects` (Phase 3), `siteScans.enabled`/`siteScans.vaultDir`/`siteScans.sites` (Phase 5). Expand a leading `~` in any path to `$HOME`, and always double-quote paths in commands: they can contain spaces (`siteScans.vaultDir` does). `run.sh` validates the config with `scripts/validate-config.mjs` before every run and aborts on any error, so a disabled integration really is disabled, not a typo. A disabled integration's phase is skipped, with "disabled in config" in the report.
 
 ## Target Repositories
 
@@ -42,7 +42,7 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
 
 1. Run the pre-run usage check; stop entirely if thresholds are hit.
 2. **Scan pass — run this for every repo, in order, before any task work.** These phases are cheap (GitHub reads plus a handful of generator/ranker/classifier/research subagents) and high-value, so they go first: a run that later hits a usage stop during the task pass has already recorded every suggestion, promoted every closed digest, and posted every generated digest.
-   a. **Harvest suggestion intake** (see Weekly Improvement Scan → Phase 0). Daily; records PR/human follow-up suggestions to the ledger. Do it even if the PR cap is hit (ledger writes are cheap).
+   a. **Harvest suggestion intake** (see Weekly Improvement Scan → Phase 0). Daily; records PR/human follow-up suggestions to the ledger, and package suggestions to the shared packages repo's ledger (see Package Suggestions). Do it even if the PR cap is hit (ledger writes are cheap).
    b. **Promote any closed, unprocessed improvement digest** (see Weekly Improvement Scan → Phase 1). This runs **every day**, not just on generation days — closing a digest is the human's go signal. Do it even if the PR cap is hit (creating issues is cheap).
    c. **Feedback triage** (see Weekly Improvement Scan → Phase 4). Daily, runs **before generation** so new feedback feeds the same day's digest. Reviews user-submitted `feedback` issues: auto-converts confident defects to `bug`, intakes the rest to the ledger as `source: feedback` (left on the `feedback` hold label), and closes duplicates. Cheap except the locked-down classifier session, which obeys the usage limits — skip classification if a stop threshold was hit (ledger/label writes for already-classified items still run).
    d. **If today is Wednesday or Sunday, generate the repo's improvement digest** (see Weekly Improvement Scan → Phase 2). Only when `improvementDigests.enabled`. Generation-days-only; obeys the usage limits — skip if a stop threshold was already hit.
@@ -197,6 +197,23 @@ Close every worker prompt with:
 ```
 
 (Dependabot workers skip the suggestions block — they do dependency maintenance, not feature/follow-up work.)
+
+### Package Suggestions
+
+`sharedPackages` in the config names the repo that publishes the fleet's shared packages (`repo`, one of the configured repos) and their npm scope (`scope`, for example `@acme`). `null` turns this section off. When it is set, a worker on any **other** repo can report something a shared package should do differently, and intake files it against the packages repo's ledger instead of the app's (see Weekly Improvement Scan → Phase 0).
+
+Add this bullet to the closing block, directly after the follow-up suggestions bullet, for every worker on a repo other than `sharedPackages.repo`. Replace `<scope>` and `<packages-repo>` before sending. Dependabot workers skip it.
+
+```
+- This repo uses shared packages published as `<scope>/*` from the <packages-repo> repository. If while working you found that one of them does not fit (a preset rule you had to override, a bin or workflow missing a mode you needed, a synced template that overwrote something, a README that is wrong), record it in a second machine-parseable block in the PR body. Wrap it exactly like this and add the `has-package-suggestions` label to the PR (`gh pr edit <PR-URL> --add-label has-package-suggestions`; create the label first if missing: `gh label create has-package-suggestions --color 5319E7 --description "PR carries suggestions for the shared packages" 2>/dev/null || true`). Omit both the block and the label if you have none.
+  ```
+  <!-- package-suggestions:start -->
+  ## Package suggestions
+  - `<package name>`: `<short title>` - <one sentence: what the package does today and what it should do instead> _(suggested: <Bug|P1|P2|P3|P4>, effort: <S|M|L>, evidence: <the package's bin, export, option, or template file>)_
+  <!-- package-suggestions:end -->
+  ```
+  Rules for this block: describe the package's behavior only. The packages repository may be public, so never mention this repo's security gaps, secrets, internal file contents, or data. Report only what you hit in this task, and only something another consumer would hit too; a need specific to this repo is not a package suggestion. Work that belongs in this repo (for example "adopt the new option once it ships") goes in the follow-up suggestions block instead. Never put one item in both blocks. Do not open issues or pull requests against the packages repository yourself.
+```
 
 Below, only the task-specific middle + closing deltas are given. For an **untrusted-origin** task (an issue that is untrusted, or a PR labeled `untrusted-origin`; see Untrusted Input), the worker must not push: replace every push, PR, review-trail-comment, and clone-deletion step in the template with the Untrusted closing block at the end of this section.
 
@@ -373,7 +390,7 @@ When an issue has a **Reference HTML** section (see `html-issue.md`), treat the 
 Full spec (ledger format, Phases 0-5, generator/ranker prompts, digest format, scan reporting) lives in `docs/improvement-scan.md`. **Read that file in full before starting the scan pass** (Responsibilities step 2); do not run any scan phase from memory.
 
 Summary only:
-- **Phase 0, intake (daily):** harvest PR `has-suggestions` blocks and `/suggest` comments into the ledger as `held`.
+- **Phase 0, intake (daily):** harvest PR `has-suggestions` blocks and `/suggest` comments into the ledger as `held`. `has-package-suggestions` blocks go to the shared packages repo's ledger instead.
 - **Phase 1, promotion (daily):** a human-closed, unprocessed `improvement-digest` becomes issues (checked) or `rejected` ledger entries (unchecked). For `source: feedback` survivors, promotion **relabels the existing feedback issue in place** (no new issue).
 - **Phase 2, generation (Wed/Sun only, only when `improvementDigests.enabled`):** generator (Sonnet) + ranker (Opus) produce one digest per repo; skip if one was created today or one is still open.
 - **Phase 3, Sentry intake (daily):** top unresolved production errors become `bug` + `sentry` issues directly (no digest); 5 per run, ceiling of 10 open per repo. Closed issues sync back to Sentry: completed = resolved in next release, not planned = archived until escalating; either returning reopens the GitHub issue.

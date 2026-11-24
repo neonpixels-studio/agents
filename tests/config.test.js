@@ -62,6 +62,21 @@ describe('validateConfig', () => {
       'needs a contractSurface',
     ],
     [
+      'shared packages that is neither an object nor null',
+      (config) => (config.sharedPackages = 'packages'),
+      'sharedPackages must be an object or null',
+    ],
+    [
+      'shared packages in an unknown repo',
+      (config) => (config.sharedPackages.repo = 'nowhere'),
+      'sharedPackages references unknown repo: nowhere',
+    ],
+    [
+      'shared packages scope that is not an npm scope',
+      (config) => (config.sharedPackages.scope = 'neon-pixels'),
+      'sharedPackages.scope must be an npm scope',
+    ],
+    [
       'improvement digests without an enabled flag',
       (config) => delete config.improvementDigests.enabled,
       'improvementDigests.enabled must be a boolean',
@@ -92,6 +107,12 @@ describe('validateConfig', () => {
     const errors = validateConfig(withChange(change));
 
     expect(errors.join('\n')).toContain(expectedError);
+  });
+
+  it('accepts a config with shared packages turned off', () => {
+    const config = withChange((draft) => (draft.sharedPackages = null));
+
+    expect(validateConfig(config)).toEqual([]);
   });
 
   it('skips Sentry and site-scan details when those integrations are disabled', () => {
