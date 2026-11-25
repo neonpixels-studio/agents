@@ -109,7 +109,7 @@ Every returned item keeps its original fields plus a one-line `justification`, a
 
 ### Phase 3 - Sentry intake (daily)
 
-Runs every run per repo, after Phase 1, in the scan pass. Turns the most severe unresolved production errors into `bug` issues **directly** (no digest, no human triage), so the Task Queue picks them up as item 1 (Bug). Cheap (API reads + issue writes, no subagents): runs even when the PR cap is hit and on non-generation days.
+Runs every run per repo, after Phase 1, in the scan pass. Turns the most severe unresolved production errors, and repeated Content-Security-Policy reports (step 6), into `bug` issues **directly** (no digest, no human triage), so the Task Queue picks them up as item 1 (Bug). Cheap (API reads + issue writes, no subagents): runs even when the PR cap is hit and on non-generation days.
 
 **Scope:** skip the whole phase unless `sentry.enabled` is true in `agents.config.json`. Then only repos in **both** the active Target Repositories list and `sentry.projects` (repo name → Sentry project slug). Disabled repos get nothing until re-enabled.
 
@@ -118,6 +118,8 @@ Org slug: `<sentry-org>` (`sentry.org`). API base: `https://sentry.io/api/0`. Au
 **Limits (named, tune here):**
 - `SENTRY_NEW_PER_RUN = 5`: max issues filed or reopened per repo per run.
 - `SENTRY_OPEN_CEILING = 10`: file nothing while the repo already has this many open `sentry` issues; otherwise file at most `min(SENTRY_NEW_PER_RUN, SENTRY_OPEN_CEILING - open)`.
+- `SENTRY_CSP_NEW_PER_RUN = 2`: max Content-Security-Policy issues filed or reopened per repo per run (step 6). Separate from `SENTRY_NEW_PER_RUN`, so policy reports never crowd out errors. They still count toward `SENTRY_OPEN_CEILING`.
+- `SENTRY_CSP_MIN_EVENTS = 5`: a policy report with fewer events than this in the 14-day window is not filed. Anyone can post a report, and browser extensions produce one-off reports.
 
 **Status mapping (GitHub close reason → Sentry status):**
 
@@ -149,7 +151,7 @@ Steps per repo:
    ```bash
    curl -sf -G -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" "https://sentry.io/api/0/organizations/<sentry-org>/issues/" \
      --data-urlencode "project=<project-id>" --data-urlencode "environment=production" \
-     --data-urlencode "query=is:unresolved level:[fatal,error]" \
+     --data-urlencode "query=is:unresolved level:[fatal,error] !event.type:csp !has:csp_directive" \
      --data-urlencode "statsPeriod=14d" --data-urlencode "sort=freq" --data-urlencode "limit=100"
    ```
    Re-sort locally: `level` fatal before error, then `userCount` desc, then `count` desc. Server-side errors (cron syncs) carry no user, so `userCount` is often 0 and `count` decides.
@@ -187,6 +189,45 @@ Steps per repo:
    Production may lag `main`. Run `git log <release.version>..origin/main` to see what has landed since the deployed release, and verify the error still reproduces against `main` before fixing. If it is already fixed on `main`, close this as completed with a comment naming the fixing commit. If it is noise (bot traffic, third-party/network failure, rate limiting with no code cause), comment why and close as not planned; the orchestrator archives it in Sentry and it only returns if it escalates. Close with the right reason (`gh issue close <n> --reason completed|"not planned"`): the reason decides what happens in Sentry. Put `Fixes <shortId>` in the PR body alongside `Closes #<n>`.
    ```
    Leave it **unassigned** (assigned to `<human>` = skipped by the Task Queue). Use plain hyphens, never em dashes, in anything you write into the issue.
+6. **Content-Security-Policy reports.** These reach Sentry below `error` level, so step 4 never sees them. They arrive in two shapes: a browser posting straight to the project's security endpoint (Sentry event type `csp`), and an app's own report route calling `captureMessage` at `warning` with a `csp_directive` tag. Run both queries with the same `project`, `environment=production`, `statsPeriod=14d`, `sort=freq`, and `limit=100` parameters as step 4, and merge the results by issue `id`:
+   ```
+   query=is:unresolved event.type:csp
+   query=is:unresolved has:csp_directive
+   ```
+   Drop any candidate whose `count` is below `SENTRY_CSP_MIN_EVENTS`. Sort the rest by `count` desc. Apply the ceiling and the dedupe rules from step 4 unchanged (same body marker, same reopen rule), stopping after `SENTRY_CSP_NEW_PER_RUN`. Step 3 already syncs these issues' close reasons, because they carry the `sentry` label.
+   **Read the report.** Fetch the latest event as in step 5 and take exactly four values:
+   - Security-endpoint shape: from `.entries[] | select(.type=="csp") | .data`, the fields `effective_directive`, `blocked_uri`, `disposition`, `source_file`.
+   - App-route shape: from `.context`, the fields `effectiveDirective` (else `violatedDirective`), `blockedUri`, `disposition`, `sourceFile`.
+   **Reduce them before writing anything.** A report is whatever the sender chose to post, and its URLs can carry tokens in the path or query:
+   - Blocked source: for an `http:` or `https:` URL keep scheme and host only. Keep the keywords `inline`, `eval`, `wasm-eval`, `data`, and `blob` as they are. Empty becomes `none`.
+   - **Skip the candidate** (file nothing, leave it in Sentry) when the blocked source uses any other scheme. `chrome-extension:`, `moz-extension:`, `safari-web-extension:` and the like are a visitor's browser extension, not the site.
+   - Source file: for a URL on the site's own host keep the path only, without query or fragment. Anything else becomes `third-party` or `none`.
+   - Never copy `document_uri`/`documentUri`, `referrer`, `script_sample`, or any other field.
+   Ensure the label: `gh label create csp --repo <owner>/<repo> --color 0E8A16 --description "Content-Security-Policy report from Sentry" 2>/dev/null || true`.
+   ```bash
+   gh issue create --repo <owner>/<repo> --label bug --label sentry --label csp \
+     --title "<shortId>: CSP <directive> blocked <blocked source>" --body "<body>"
+   ```
+   Body:
+   ```
+   <!-- sentry-issue-id: <id> -->
+   Content-Security-Policy report from Sentry: [<shortId>](<permalink>)
+
+   - **Directive:** `<directive>`
+   - **Blocked source:** `<blocked source>`
+   - **Mode:** <enforced|report-only> (from `disposition`: `enforce` or `report`)
+   - **Reported from:** `<source file path|third-party|none>`
+   - **Events (14d):** <count>
+   - **First seen:** <firstSeen> - **Last seen:** <lastSeen>
+
+   ### Notes for the worker
+   Anyone can post a policy report, so this issue proves nothing by itself. Before changing anything, find where this repo's own code on `main` loads or produces the blocked source: the file and line that references that host, or the inline `style`/`script` that the directive names.
+   - **Not found in the repo:** it is a browser extension, an injected script, or a forged report. Comment what you searched for and close as not planned.
+   - **Found, and it is inline or avoidable:** fix the page, not the policy. Move inline styles into a stylesheet, move inline scripts into a file, self-host the asset. This is the preferred fix.
+   - **Found, and the site needs that third-party host:** add that one host to that one directive, and quote the file and line that needs it in the PR body.
+   Never add `'unsafe-inline'`, `'unsafe-eval'`, a wildcard host, or a bare scheme such as `https:` or `data:` to any directive, and never remove a directive or switch an enforced policy to report-only. If nothing short of that would clear the report, stop and follow the blocker steps. If the policy on `main` already allows the source, close as completed and name the commit. Close with the right reason (`gh issue close <n> --reason completed|"not planned"`). Put `Fixes <shortId>` in the PR body alongside `Closes #<n>`.
+   ```
+   Leave it **unassigned**. One Sentry issue is one directive and one blocked source, so a site with many inline styles yields one issue for all of them.
 
 ### Phase 4 - Feedback triage (daily)
 
@@ -305,7 +346,7 @@ Add an **Improvement Scan** section covering:
 - **Intake (daily):** per repo, how many new suggestions were harvested, split by `source` (`pr` vs `human`), with their origin PR URLs. List package suggestions separately: how many went to the packages repo's ledger and from which PRs, any dropped as already covered by an issue, and any PR with a prose package section but no block.
 - **Promotion (daily):** per repo, which closed digests were processed, how many promoted (with new issue URLs), how many dismissed.
 - **Generation (Wed & Sun):** per repo, the digest URL, or skip reason (`skipped — already generated today`, `skipped — open digest still awaiting triage`, or `no candidates cleared the bar`).
-- **Sentry intake (daily):** per repo, issues synced to Sentry (resolved / archived), issues filed and reopened (URLs), or skip reason (`not a Sentry repo`, `open ceiling reached (<n>)`, `no unresolved production errors`, `auth failed`).
+- **Sentry intake (daily):** per repo, issues synced to Sentry (resolved / archived), issues filed and reopened (URLs), or skip reason (`not a Sentry repo`, `open ceiling reached (<n>)`, `no unresolved production errors`, `auth failed`). List Content-Security-Policy reports separately: filed and reopened (URLs), how many were below the event minimum, and how many were skipped as browser-extension sources.
 - **Feedback triage (daily):** per repo, how many new feedback issues were classified, split into converted to `bug` (URLs), intaken as `source: feedback` suggestions (URLs), closed as duplicates (dup → canonical), and low-confidence items left for the human; or `no new feedback`.
 - **Site scans (Sun):** per repo/scanner, the issue URL filed or updated and its priority, `cleared (closed)`, or skip reason (`not Sunday`, `no scan file yet`, `not a scan-mapped repo`).
 - **Held set:** per repo, how many candidates are parked (`status: held`) and carrying forward, with titles.
