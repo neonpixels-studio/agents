@@ -100,6 +100,7 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
    | `sharedPackages` | `repo` (one of the configured repos) and npm `scope` of the packages the other repos share, or `null`. Workers on the other repos report package problems in their PR, and intake records them against the packages repo (see Package Suggestions in `CLAUDE.md`). |
    | `errorLog` | Path to a markdown error table, or `null` to disable it. A leading `~` is expanded. |
    | `improvementDigests` | `enabled`. Set to `false` to stop generating new improvement digests; intake, promotion of an already-open digest, and feedback triage keep running. |
+   | `packageReleases` | `enabled`. When `true` (and `sharedPackages` is set), a new published version of a shared package is checked against each consuming repo, and anything the repo could adopt is recorded as a held suggestion for the next digest. Version bumps stay with Dependabot. |
    | `sentry` | `enabled`, the org slug, and a repo-to-project map. |
    | `siteScans` | `enabled`, the directory holding `<domain> - WCAG.md` / `<domain> - SEO.md` scan files, and a repo-to-domain map. |
 

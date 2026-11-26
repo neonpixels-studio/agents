@@ -14,7 +14,7 @@ Read `agents.config.json` in this workspace before doing anything else. If it is
 | `<error-log>` | `errorLog` | Markdown error table (see Error Logging). `null` disables it. |
 | `<sentry-org>` | `sentry.org` | Sentry organization slug. |
 
-Other keys: `trustedBots` (see Untrusted Input), `repos` (below), `crossRepoDependencies` (see Cross-Repo Dependencies), `sharedPackages` (see Package Suggestions), `improvementDigests.enabled` (Phase 2), `sentry.enabled`/`sentry.projects` (Phase 3), `siteScans.enabled`/`siteScans.vaultDir`/`siteScans.sites` (Phase 5). Expand a leading `~` in any path to `$HOME`, and always double-quote paths in commands: they can contain spaces (`siteScans.vaultDir` does). `run.sh` validates the config with `scripts/validate-config.mjs` before every run and aborts on any error, so a disabled integration really is disabled, not a typo. A disabled integration's phase is skipped, with "disabled in config" in the report.
+Other keys: `trustedBots` (see Untrusted Input), `repos` (below), `crossRepoDependencies` (see Cross-Repo Dependencies), `sharedPackages` (see Package Suggestions), `improvementDigests.enabled` (Phase 2), `packageReleases.enabled` (Phase 6), `sentry.enabled`/`sentry.projects` (Phase 3), `siteScans.enabled`/`siteScans.vaultDir`/`siteScans.sites` (Phase 5). Expand a leading `~` in any path to `$HOME`, and always double-quote paths in commands: they can contain spaces (`siteScans.vaultDir` does). `run.sh` validates the config with `scripts/validate-config.mjs` before every run and aborts on any error, so a disabled integration really is disabled, not a typo. A disabled integration's phase is skipped, with "disabled in config" in the report.
 
 ## Target Repositories
 
@@ -48,7 +48,8 @@ Logging: append a row to the Errors table (see Error Logging), then stop.
    d. **If today is Wednesday or Sunday, generate the repo's improvement digest** (see Weekly Improvement Scan → Phase 2). Only when `improvementDigests.enabled`. Generation-days-only; obeys the usage limits — skip if a stop threshold was already hit.
    e. **Sentry intake** (see Weekly Improvement Scan → Phase 3). Daily, only when `sentry.enabled`, active repos in `sentry.projects` only; files the most severe production errors as `bug` + `sentry` issues (max 5 per run, none while 10+ are open), files repeated Content-Security-Policy reports as `bug` + `sentry` + `csp` issues (max 2 per run), and pushes close reasons back to Sentry. Do it even if the PR cap is hit.
    f. **If today is Sunday, site-scan intake** (see Weekly Improvement Scan → Phase 5). Sundays only, only when `siteScans.enabled`, active repos in `siteScans.sites` only; reads the WCAG/SEO scan files from `siteScans.vaultDir` and files one aggregated WCAG and one aggregated SEO issue per site directly (priority mapped from finding Level). No subagent; do it even if the PR cap is hit.
-   g. **Answer blocked-item questions** (see Blocked Item Questions). Daily; answers questions the human left on `blocked` items they reassigned to `<agent>`, then hands each back. One read-only research subagent per item, obeying the usage limits. Do it even if the PR cap is hit (no PR is opened).
+   g. **Package release adoption** (see Weekly Improvement Scan → Phase 6). Daily, once for the whole run rather than per repo, only when `packageReleases.enabled`; when a shared package has a new published version, reads its changelog and records at most one held adoption candidate per consuming repo. One read-only subagent per repo that consumes a changed package, obeying the usage limits. Opens no PR and files no issue.
+   h. **Answer blocked-item questions** (see Blocked Item Questions). Daily; answers questions the human left on `blocked` items they reassigned to `<agent>`, then hands each back. One read-only research subagent per item, obeying the usage limits. Do it even if the PR cap is hit (no PR is opened).
 3. **Task pass — run this for every repo, in order, only after the scan pass has completed for all repos.**
    a. Check open agent PR count; if already 10, skip remaining task work for the repo, note it in the report, continue.
    b. Read the task queue (see priority order below).
@@ -315,7 +316,7 @@ If the task has no issue (PR-only maintenance), apply the same to the PR. The or
 
 A `blocked` item sometimes needs research before the human can decide. The human comments the question(s) and reassigns the item to `<agent>` (the agent's own GitHub account). That assignment is the hand-off signal. `blocked` stays on the whole time: answering never unblocks or starts work. `<agent>` assignment without `blocked` means nothing here.
 
-**Detect** (scan pass step 2g, every active repo; REST because the agent token lacks `read:org`, and the issues endpoint returns PRs too):
+**Detect** (scan pass step 2h, every active repo; REST because the agent token lacks `read:org`, and the issues endpoint returns PRs too):
 
 ```bash
 gh api "repos/<owner>/<repo>/issues?state=open&labels=blocked&assignee=<agent>&per_page=100" \
@@ -396,8 +397,9 @@ Summary only:
 - **Phase 3, Sentry intake (daily):** top unresolved production errors become `bug` + `sentry` issues directly (no digest); 5 per run, ceiling of 10 open per repo. Content-Security-Policy reports sit below error level, so a separate step files those seen 5+ times in 14 days as `bug` + `sentry` + `csp` (2 per run, same ceiling). Closed issues sync back to Sentry: completed = resolved in next release, not planned = archived until escalating; either returning reopens the GitHub issue.
 - **Phase 4, feedback triage (daily):** classify user `feedback` issues (locked-down Sonnet session: read-only tools, no shell) — confident defects auto-convert to `bug`; the rest intake to the ledger as `source: feedback` (kept on the `feedback` hold label) to ride the digest like any suggestion; duplicates close into the earliest. Runs before Phase 2.
 - **Phase 5, site-scan intake (Sun only):** read the WCAG/SEO scan files from `siteScans.vaultDir` and file one aggregated WCAG and one aggregated SEO issue per scan-mapped site directly, priority mapped from finding Level. One persistent open issue per (site, scanner), rebuilt each Sunday.
+- **Phase 6, package release adoption (daily, only when `packageReleases.enabled`):** when a shared package publishes a new version, read its changelog and check each consuming repo for something the release lets it stop doing by hand. At most one `held` ledger candidate per repo (`source: release`); it rides the digest like any suggestion. Version bumps themselves stay with Dependabot.
 - Ledger: `.ledger/<repo-name>.jsonl`, orchestrator-written only, append-only.
-- Include an **Improvement Scan** section in the final report (intake, promotion, feedback triage, generation, Sentry, site scans, held set).
+- Include an **Improvement Scan** section in the final report (intake, promotion, feedback triage, generation, Sentry, site scans, package releases, held set).
 
 ## Code Standards
 

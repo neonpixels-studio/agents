@@ -4,6 +4,8 @@ Weekly, the orchestrator scans each repo for improvements/missing functionality 
 
 Candidates come from three sources: the **generator** (a fresh codebase scan, Wed/Sun), **suggestion intake** — follow-up notes the agent leaves on PRs plus `/suggest` comments the human leaves on PRs — and **user feedback** routed in through the dashboard app. All are harvested **daily** into the ledger so they're queued and ready by the next generation day.
 
+Package release adoption (Phase 6) is a fourth source: it adds candidates to the same pool when a shared package publishes something a repo could adopt.
+
 Two further phases file issues **directly** (no digest): Sentry intake (Phase 3) and site-scan intake (Phase 5). Feedback triage (Phase 4) does both — confident defects go straight to `bug`, the rest join the digest pool.
 
 **Cadences:**
@@ -13,6 +15,7 @@ Two further phases file issues **directly** (no digest): Sentry intake (Phase 3)
 - **Sentry intake — daily** (Phase 3). Direct-file; see its section.
 - **Feedback triage — daily** (Phase 4). Runs before Phase 2 so new feedback rides the same day's digest; confident defects direct-file as `bug`.
 - **Site-scan intake — Sundays only** (Phase 5). Direct-file WCAG/SEO issues from the scan files in `siteScans.vaultDir`.
+- **Package release adoption — daily** (Phase 6), only when `packageReleases.enabled`. Does nothing unless a shared package has a version it has not evaluated yet.
 
 Generation guards:
 - **At most once per generation day:** skip if a digest was already created today — `gh issue list --repo <owner>/<repo> --label improvement-digest --state all --search "created:$(date +%Y-%m-%d)" --json number`.
@@ -30,7 +33,7 @@ Persistent memory of every candidate ever proposed, so the scan never re-propose
   ```json
   {"id": "<repo-short>-<YYYYMMDD>-<n>", "date": "<YYYY-MM-DD>", "title": "...", "summary": "...", "rationale": "...", "suggested_label": "P2", "effort": "M", "status": "proposed", "source": "scan", "origin_pr_url": null, "origin_issue_url": null, "digest_issue_url": "...", "promoted_issue_url": null, "notes": ""}
   ```
-  `status` ∈ `proposed | promoted | rejected | held`. `source` ∈ `scan | pr | human | feedback` (default `scan`; `pr`/`human` come from Phase 0 intake with `origin_pr_url` set; `feedback` comes from Phase 4 with `origin_issue_url` set — the user-submitted issue it rides). `id` e.g. `basin-20260724-2` (scan) or `basin-fb127` (feedback, from issue #127).
+  `status` ∈ `proposed | promoted | rejected | held`. `source` ∈ `scan | pr | human | feedback | release` (default `scan`; `release` comes from Phase 6; `pr`/`human` come from Phase 0 intake with `origin_pr_url` set; `feedback` comes from Phase 4 with `origin_issue_url` set — the user-submitted issue it rides). `id` e.g. `basin-20260724-2` (scan) or `basin-fb127` (feedback, from issue #127).
 - **`held`:** a strong candidate the ranker keeps but cuts only for the 5-item cap, a root-cause/larger-than-one-issue item worth remembering, **or a freshly-intaken PR/human suggestion awaiting its first ranking**. Not in this week's digest; carried forward and re-injected into the ranker pool every run as **pre-vetted** (`"carried": true`) until surfaced (→ `proposed`), promoted, or dropped. It must clear the same bar as a survivor — held is not a filler bucket (filler is `rejected`, dropped forever). A held item keeps its `id` for life; append a new record only when status actually changes.
 
 ### Phase 0 — Suggestion intake (daily)
@@ -60,6 +63,7 @@ Runs every run as step 2b, per repo. **The human closing a digest is the trigger
 3. Parse each digest's checklist: `- [x] \`<id>\` ...` = checked (wanted); `- [ ] \`<id>\` ...` = unchecked (dismissed). Nothing checked is a valid "dismiss all".
 4. For each **checked** item: look up its ledger record by `id`.
    - **`source: feedback`** (has `origin_issue_url`): the user's issue already exists — **relabel it in place**, don't create a new one. `gh issue edit <origin_issue_url> --remove-label feedback --add-label <suggested_label> --add-label from-feedback` (`from-feedback` marks the body as untrusted end-user text; see Untrusted Input in CLAUDE.md) and `gh issue comment <origin_issue_url> --body "Prioritized from improvement digest <digest-url> (<suggested_label>)."` Append a `promoted` record with `promoted_issue_url = origin_issue_url`.
+   - **`source: release`:** create a real issue using the body template in Phase 6; label = `suggested_label`. Leave it unassigned. Append a `promoted` record with `promoted_issue_url` set.
    - **Any other source:** create a real issue — title from `title`; body = `rationale` + acceptance criteria + `Promoted from improvement digest <digest-url>`; label = `suggested_label`. **Leave it unassigned** (do not assign `<human>`). Append a `promoted` record with `promoted_issue_url` set.
 5. For each **unchecked** item: append a record with `status: rejected` (won't be re-proposed). **If `source: feedback`:** the user's report was reviewed and declined, so close its origin issue — `gh issue close <origin_issue_url> --reason "not planned" --comment "Reviewed in the improvement digest and not planned. Reopen if you disagree."` (removes it from the `feedback` hold queue).
 6. Mark the digest done (never reprocessed): `gh issue edit <digest-url> --add-label digest-processed` then `gh issue comment <digest-url> --body "Promoted: <urls>. Dismissed: <n> unchecked."` Leave it **closed**. The `digest-processed` label is the idempotency guard.
@@ -340,6 +344,77 @@ The digest's per-item priority label is a suggestion only; it's applied to the p
 
 Use a plain hyphen (`-`), never an em dash (`—`/`—`), everywhere in the digest — separators and any model-authored `title`/`summary`/`rationale` text. If a candidate's text arrives with an em dash, rewrite it to a hyphen before posting.
 
+### Phase 6 - Package release adoption (daily)
+
+Runs once per run in the scan pass (not once per repo). When a shared package publishes a new version, this phase reads what changed and checks each consuming repo for something the release lets it do better. It records candidates in the ledger; it files no issue and opens no PR.
+
+**Scope:** skip the whole phase unless `packageReleases.enabled` is true in `agents.config.json` and `sharedPackages` is set, and report "disabled in config". Consuming repos are the active repos other than `sharedPackages.repo`.
+
+**What this phase is not for.** Version bumps belong to Dependabot (see Dependabot PRs in CLAUDE.md): it raises the version, and the worker on that PR adapts call sites a breaking change broke. A first-time adoption of a package a repo does not depend on yet is a design decision for the human. This phase covers only the gap between the two: the repo already depends on the package, the new version is optional to use, and using it would remove code or a workaround the repo carries today.
+
+**State:** `<workspace>/.ledger/_package-releases.jsonl`, orchestrator-written, append-only, one line per package per evaluated version: `{"package": "<name>", "version": "<x.y.z>", "date": "<YYYY-MM-DD>", "result": "baseline|evaluated"}`. The latest line per package is the last version this phase has seen.
+
+Steps:
+
+1. **List the published packages.** Read the packages repo's `pnpm-workspace.yaml` for its package directories, then each directory's `package.json` (`gh api repos/<packages-owner>/<packages-repo>/contents/<dir>/package.json -H 'Accept: application/vnd.github.raw'`). Drop any with `"private": true`.
+2. **Find new versions.** For each package, `npm view <name> version` is the latest published version. npm is the source of truth, not the version on `main`: a release whose publish failed is not a release (see Workspace Repositories in CLAUDE.md).
+   - `npm view` fails (never published) → skip the package, no state line.
+   - No state line for the package → append a `baseline` line at the latest version and evaluate nothing. Enabling this phase never replays old releases.
+   - Latest equals the last seen version → nothing to do.
+   - Latest is newer → the package has **new versions**: every version after the last seen one, up to and including latest.
+3. **Read the changelog.** For each package with new versions, fetch its `CHANGELOG.md` from `main` and take the `## <version>` sections for those versions only (never a section above the latest published version). Drop a section whose body is `No changes in this release.` or holds nothing but an `Updated dependencies` list: with fixed versioning every package gets a version on every release, and most of them did not change. Keep the remaining entries, each tagged with its package and version. A package whose sections are all dropped is **unchanged**.
+4. **Nothing changed anywhere** → append an `evaluated` line for every package with new versions and stop. Report "release <version>: no package changes".
+5. **Per consuming repo,** read its root `package.json` (`gh api repos/<owner>/<repo>/contents/package.json -H 'Accept: application/vnd.github.raw'`) and keep the changelog entries for packages it lists in `dependencies` or `devDependencies`.
+   - None → no subagent. Note "consumes no changed package".
+   - Derive `id` = `<repo-short>-rel<YYYYMMDD>` (today). If the ledger already has that `id`, skip the repo: it was evaluated earlier today.
+   - Otherwise spawn one **classifier subagent on Sonnet** with the prompt below. If a stop threshold has been hit, stop the phase here without writing state lines; the next run resumes, and the `id` check skips repos already recorded.
+6. **Carry an unpromoted earlier candidate forward.** If the repo's ledger has an earlier `-rel` record whose latest status is `held`, pass its items to the classifier as `carried` so it re-checks them against the current code. After the classifier returns, append a `rejected` record for the old `id` with `notes` = `superseded by <new id>`, whether or not the items survived. A repo never has two held release candidates. Leave a `proposed` one alone: it is in an open digest.
+7. **Record the result.** The classifier returns a JSON array of items.
+   - Empty → no ledger record. Note "nothing to adopt".
+   - Otherwise append **one** record for the repo: `id` as above, `status: held`, `carried: true`, `source: release`, `title` = `Adopt <scope> <latest version>: <the items' short titles, comma-separated>` (cut to 100 characters), `summary` = one sentence, `rationale` = the items as a markdown checklist (format below), `suggested_label` = `P3` if any item is `P3`, else `P4`, `effort` = the largest item effort. Build the record with `jq` and run `jq -c . <ledger>` after the append.
+8. **Mark the release evaluated.** Only after every consuming repo has been handled, append an `evaluated` line for every package with new versions.
+
+**Rationale format** (one line per item, at most 5 items, most valuable first):
+```
+- [ ] `<package>` <version>: <what to adopt> - replaces `<path in the repo>` (<one clause: what that code does today>)
+```
+
+**Classifier subagent prompt** (read-only; replace the standard closing block with the last two lines):
+```
+You are a subagent working on the <owner>/<repo-name> repository. READ-ONLY. Do not push, open a PR, create issues, or comment.
+Clone <repo-url> into /tmp/ as <repo-name>-release-adoption/ (use --filter=blob:none).
+New versions of shared packages this repository depends on were published. Changelog entries (JSON, each {package, version, entry}):
+<entries>
+Earlier candidates to re-check (JSON, may be empty): <carried items>
+
+For each entry, decide whether this repository should change anything because of it. Keep an entry only when ALL of these hold:
+- The repository has code, config, or a workaround that the entry makes unnecessary or lets it replace with the package: a local copy of a helper the package now exports, an override of a preset rule the package changed, a workaround for a bug the entry fixes, an option the repository builds by hand that the package now accepts.
+- You found that code and can name the file. No file, no item.
+- The gain is real for this repository: less code to maintain, a bug or gap closed, or a check it lacks. "Now available" alone is not a gain.
+Never keep: a breaking change (the version bump handles it), an internal fix that takes effect with the bump alone, a docs or test change, or a feature this repository has no present use for.
+Re-check each earlier candidate the same way against the current code; drop it if the repository already adopted it or the file is gone.
+Expect to return nothing for most releases. An empty list is the normal answer.
+
+Return at most 5 items as a JSON array, most valuable first. Each: {package, version, title (under 8 words), adopt (one sentence: what to change), evidence (path in this repository), today (one clause: what that code does now), suggested_label (P3|P4), effort (S|M|L)}.
+In every text field use a plain hyphen (-), never an em dash.
+Delete the clone when done. Your final message must be ONLY the JSON array.
+```
+
+**Issue body when Phase 1 promotes a `source: release` record:**
+```
+A new release of the shared packages includes changes this repository can use. Each box is one change, with the code it replaces.
+
+<rationale checklist>
+
+### Notes for the worker
+- Check each item against main first. If the code named is gone or already uses the package, tick the box and say so in the PR.
+- If `package.json` has a named package below the version given, raise that package to it in this PR. Raise nothing else.
+- Remove the local code an item replaces; do not leave both in place.
+- If an item does not fit once you read the package's README, leave its box unticked, explain in the PR, and record what the package would need in the package suggestions block.
+
+Promoted from improvement digest <digest-url>.
+```
+
 ### Reporting the scan
 
 Add an **Improvement Scan** section covering:
@@ -349,5 +424,6 @@ Add an **Improvement Scan** section covering:
 - **Sentry intake (daily):** per repo, issues synced to Sentry (resolved / archived), issues filed and reopened (URLs), or skip reason (`not a Sentry repo`, `open ceiling reached (<n>)`, `no unresolved production errors`, `auth failed`). List Content-Security-Policy reports separately: filed and reopened (URLs), how many were below the event minimum, and how many were skipped as browser-extension sources.
 - **Feedback triage (daily):** per repo, how many new feedback issues were classified, split into converted to `bug` (URLs), intaken as `source: feedback` suggestions (URLs), closed as duplicates (dup → canonical), and low-confidence items left for the human; or `no new feedback`.
 - **Site scans (Sun):** per repo/scanner, the issue URL filed or updated and its priority, `cleared (closed)`, or skip reason (`not Sunday`, `no scan file yet`, `not a scan-mapped repo`).
+- **Package releases (daily):** `disabled in config`, `no new versions`, or per release: the packages that changed, and per repo the candidate recorded (`id` and item count), `nothing to adopt`, or `consumes no changed package`. Name any package whose version on `main` is ahead of npm (a publish that has not happened).
 - **Held set:** per repo, how many candidates are parked (`status: held`) and carrying forward, with titles.
 

@@ -82,6 +82,19 @@ describe('validateConfig', () => {
       'improvementDigests.enabled must be a boolean',
     ],
     [
+      'package releases without an enabled flag',
+      (config) => delete config.packageReleases.enabled,
+      'packageReleases.enabled must be a boolean',
+    ],
+    [
+      'package releases enabled with shared packages turned off',
+      (config) => {
+        config.packageReleases.enabled = true;
+        config.sharedPackages = null;
+      },
+      'packageReleases.enabled requires sharedPackages to be set',
+    ],
+    [
       'Sentry enabled without an org',
       (config) => (config.sentry.org = ''),
       'sentry.org is required',
@@ -111,6 +124,14 @@ describe('validateConfig', () => {
 
   it('accepts a config with shared packages turned off', () => {
     const config = withChange((draft) => (draft.sharedPackages = null));
+
+    expect(validateConfig(config)).toEqual([]);
+  });
+
+  it('accepts package releases enabled alongside shared packages', () => {
+    const config = withChange(
+      (draft) => (draft.packageReleases.enabled = true),
+    );
 
     expect(validateConfig(config)).toEqual([]);
   });

@@ -33,6 +33,7 @@ export function validateConfig(config) {
     ...validateCrossRepoDependencies(config.crossRepoDependencies, knownRepos),
     ...validateSharedPackages(config.sharedPackages, knownRepos),
     ...validateImprovementDigests(config.improvementDigests),
+    ...validatePackageReleases(config.packageReleases, config.sharedPackages),
     ...validateSentry(config.sentry, knownRepos),
     ...validateSiteScans(config.siteScans, knownRepos),
   ];
@@ -185,6 +186,21 @@ function validateImprovementDigests(improvementDigests) {
     typeof improvementDigests.enabled !== 'boolean'
   ) {
     return ['improvementDigests.enabled must be a boolean'];
+  }
+
+  return [];
+}
+
+function validatePackageReleases(packageReleases, sharedPackages) {
+  if (
+    !isObject(packageReleases) ||
+    typeof packageReleases.enabled !== 'boolean'
+  ) {
+    return ['packageReleases.enabled must be a boolean'];
+  }
+
+  if (packageReleases.enabled && sharedPackages === null) {
+    return ['packageReleases.enabled requires sharedPackages to be set'];
   }
 
   return [];
