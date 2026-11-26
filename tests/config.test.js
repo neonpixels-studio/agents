@@ -123,7 +123,10 @@ describe('validateConfig', () => {
   });
 
   it('accepts a config with shared packages turned off', () => {
-    const config = withChange((draft) => (draft.sharedPackages = null));
+    const config = withChange((draft) => {
+      draft.sharedPackages = null;
+      draft.packageReleases.enabled = false;
+    });
 
     expect(validateConfig(config)).toEqual([]);
   });

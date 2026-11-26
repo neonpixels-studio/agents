@@ -34,7 +34,7 @@
     "enabled": false
   },
   "packageReleases": {
-    "enabled": false
+    "enabled": true
   },
   "sentry": {
     "enabled": true,
