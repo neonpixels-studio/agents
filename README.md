@@ -40,7 +40,7 @@ Every worker runs the same checks CI runs before it pushes, then gets an indepen
 - **`blocked`** stops the agent cold on an item. The human clears it.
 - **Assignment is a handoff.** An item assigned to the human is skipped. Reassigning a `blocked` item to the agent account with a question gets it researched and answered, never worked.
 - **Digests are a gate.** The agent proposes improvements; only the boxes the human ticks become issues.
-- **Session limits.** When a run hits the plan's session limit, `run.sh` records it as a rate limit rather than a crash, and the next scheduled run picks up where it left off.
+- **Session limits.** `run.sh` skips a run when the last recorded usage reading is over the CLAUDE.md thresholds. When a run hits the plan's session limit anyway, `run.sh` records it as a rate limit rather than a crash, and the next scheduled run picks up where it left off.
 
 ## Safety model
 
@@ -62,7 +62,7 @@ What this does not cover: workers run as the same OS user as everything else on 
 | [`CLAUDE.md`](CLAUDE.md) | The program. The orchestrator's full operating spec: task queue, prompt templates, retry limits, review gate, e2e procedure. |
 | [`docs/improvement-scan.md`](docs/improvement-scan.md) | Sub-spec for the scan pass phases, read on demand to keep CLAUDE.md small. |
 | [`agents.config.json`](agents.config.json) | Everything installation-specific. |
-| [`run.sh`](run.sh) | The shell around the orchestrator: locking, log rotation, the background-wait ceiling, and detection of failure modes that exit quietly. |
+| [`run.sh`](run.sh) | The shell around the orchestrator: locking, log rotation, the pre-run usage skip, the background-wait ceiling, and detection of failure modes that exit quietly. |
 | [`launchd/`](launchd/) | The schedule. |
 | [`html-issue.md`](html-issue.md) | Issue template for features specced with a reference HTML design. |
 | [`.claude/agents/`](.claude/agents/) | Project subagent definitions. |
@@ -121,7 +121,7 @@ Most of the interesting decisions are in comments and rationale lines in `CLAUDE
 
 ### Known limitations
 
-- **The usage meters aren't readable from a headless run.** The pre-run and mid-run usage checks in CLAUDE.md are specified but can't actually be evaluated, so `run.sh` catches the session-limit rejection after the fact instead.
+- **Usage meters lag by one event.** Headless runs emit stream-json, and each `rate_limit_event` carries the five-hour (session) and seven-day (weekly) utilization. `run.sh` skips a run when the latest reading is over the CLAUDE.md thresholds, and the orchestrator re-checks after each subagent with `scripts/read-usage-meters.sh`. A reading is only as fresh as the last API call, and interactive sessions spend the same meters without writing to this log, so a reading is ignored once its window has reset (a session reading is therefore never more than five hours old). `run.sh` still catches a session-limit rejection after the fact and logs it as a rate limit, not a crash.
 - **macOS only.** The log paths and the scheduler assume it.
 - **CI proves Linux, not macOS.** The `run.sh` tests run on `ubuntu-latest`, so they can't catch BSD-vs-GNU differences in `date`, `ps`, or `sed`. The pre-commit hook runs the same suite on the Mac before every commit, which is the only macOS coverage; there is no macOS CI job, to save billed minutes.
 - **The stack is opinionated.** Swapping out GitHub, dotenvx, or Neon means editing the spec, not the config.
@@ -133,7 +133,7 @@ The program is markdown, so the tests guard what a markdown linter can't:
 - **The trust boundary.** `filters/trusted-comments.jq` is tested directly, and the exact pipelines CLAUDE.md and the scan spec tell the orchestrator to run are pulled out of the docs and executed against fixture comments, so weakening one in prose fails CI. `scripts/check-protected-paths.sh` is tested against the paths it must block and lookalikes it must allow.
 - **Spec hygiene.** No GitHub logins, Sentry org, or machine paths hardcoded outside `agents.config.json`; every `(see Section)` names a heading that exists; README links resolve.
 - **Config.** `scripts/validate-config.mjs` checks `agents.config.json`: real GitHub URLs, no repo both active and disabled, booleans where switches belong, Sentry and site-scan maps only reference known repos. `run.sh` runs the same validator before every run.
-- **`run.sh`.** Runs in a sandbox with stubbed `claude` and `direnv` to check the tool and config guards, the error table (including the `^errorTable` anchor), lock handling, and detection of failures that exit quietly.
+- **`run.sh`.** Runs in a sandbox with stubbed `claude` and `direnv` to check the tool and config guards, the error table (including the `^errorTable` anchor), lock handling, the usage-meter skip (fresh, stale, missing, and malformed readings), and detection of failures that exit quietly.
 - **`scripts/trim-logs.mjs` and the launchd template.**
 
 ```bash

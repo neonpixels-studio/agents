@@ -9,6 +9,11 @@ LOCK_DIR="$LOG_DIR/.agents-run.lock"
 CONFIG_FILE="$SCRIPT_DIR/agents.config.json"
 ERROR_LOG_FILE=""
 
+# The Skip column of CLAUDE.md → Usage Limits, as 0-1 fractions.
+# tests/run-sh.test.js fails if these drift from that table.
+WEEKLY_SKIP_THRESHOLD=0.85
+SESSION_SKIP_THRESHOLD=0.75
+
 ordinal_date() {
     local day month year suffix
     day=$(date +%-d)
@@ -109,11 +114,41 @@ acquire_lock_or_exit() {
     exit 0
 }
 
+# Prints why the run should be skipped ("Weekly usage above 85%: run skipped.
+# Weekly: 86% \| Session: 32%"), or nothing when it should go ahead. A meter the
+# reader returns as null (no reading, or a stale one) never causes a skip.
+usage_skip_reason() {
+    "$SCRIPT_DIR/scripts/read-usage-meters.sh" "$LOG_FILE" | jq -r \
+        --argjson weekly_skip "$WEEKLY_SKIP_THRESHOLD" \
+        --argjson session_skip "$SESSION_SKIP_THRESHOLD" '
+        def percent: if . == null then "unknown" else "\(. * 100 | round)%" end;
+        . as $reading
+        | [
+            (select((.weekly // 0) >= $weekly_skip) | "Weekly usage above \($weekly_skip | percent)"),
+            (select((.session // 0) >= $session_skip) | "Session usage above \($session_skip | percent)")
+          ]
+        | select(length > 0)
+        | "\(join(" and ")): run skipped. Weekly: \($reading.weekly | percent) \\| Session: \($reading.session | percent)"
+    ' 2>/dev/null
+}
+
+# A skip is expected throttling, not a failure, so it exits 0 before claude
+# starts. The orchestrator re-checks against the Stop column after each subagent.
+skip_if_over_usage_threshold() {
+    local reason
+    reason=$(usage_skip_reason)
+    [ -z "$reason" ] && return 0
+    echo "=== Run skipped: $reason ($TIMESTAMP) ===" >> "$LOG_FILE"
+    log_error_row "$reason" "all"
+    exit 0
+}
+
 require_command jq
 require_command node
 load_error_log_path
 validate_config_or_abort
 acquire_lock_or_exit
+skip_if_over_usage_threshold
 
 node "$SCRIPT_DIR/scripts/trim-logs.mjs" "$LOG_FILE" "$ERR_FILE"
 
@@ -133,6 +168,10 @@ echo "=== Run started: $TIMESTAMP ===" >> "$ERR_FILE"
 # drift; an unrecognized var is harmless.
 export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=5400000
 export CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS=5400000
+
+# CLAUDE.md → Usage Limits tells the orchestrator to read the meters from this
+# log after each subagent; it can't know where run.sh writes it otherwise.
+export AGENTS_RUN_LOG="$LOG_FILE"
 
 # Capture this run's stderr to a temp file so we can inspect it for run-level
 # errors, while still appending it to the rolling error log as before.
