@@ -33,14 +33,22 @@ Check before starting and after each subagent. Thresholds are fixed — never ch
 | Weekly usage  | ≥ 85%              | ≥ 90%                |
 | Session usage | ≥ 75%              | ≥ 85%                |
 
-- **Pre-run:** Weekly ≥ 85% or Session ≥ 75% → log then stop.
+- **Pre-run:** Weekly ≥ 85% or Session ≥ 75% → log then stop. `run.sh` does this before it starts the orchestrator, logging the Errors row itself, so the orchestrator never repeats it.
 - **Mid-run** (after each subagent): Weekly ≥ 90% or Session ≥ 85% → log then stop.
+
+Read the meters with this command. `run.sh` exports `AGENTS_RUN_LOG` as the path of the run log it streams this session's output into:
+
+```bash
+scripts/read-usage-meters.sh "$AGENTS_RUN_LOG"
+```
+
+It prints the latest reading as 0-1 fractions, for example `{"weekly":0.91,"session":0.42}`, which is Weekly 91%, Session 42%. Compare against the Stop column. A `null` meter is not readable (no reading in the log yet, `AGENTS_RUN_LOG` unset in an interactive session, or the meter's window has reset since the reading): continue, and note "meter not readable" in the final report.
 
 Logging: append a row to the Errors table (see Error Logging), then stop.
 
 ## Your Responsibilities
 
-1. Run the pre-run usage check; stop entirely if thresholds are hit.
+1. Don't repeat the pre-run usage check: `run.sh` ran it before starting this session (see Usage Limits).
 2. **Scan pass — run this for every repo, in order, before any task work.** These phases are cheap (GitHub reads plus a handful of generator/ranker/classifier/research subagents) and high-value, so they go first: a run that later hits a usage stop during the task pass has already recorded every suggestion, promoted every closed digest, and posted every generated digest.
    a. **Harvest suggestion intake** (see Weekly Improvement Scan → Phase 0). Daily; records PR/human follow-up suggestions to the ledger, and package suggestions to the shared packages repo's ledger (see Package Suggestions). Do it even if the PR cap is hit (ledger writes are cheap).
    b. **Promote any closed, unprocessed improvement digest** (see Weekly Improvement Scan → Phase 1). This runs **every day**, not just on generation days — closing a digest is the human's go signal. Do it even if the PR cap is hit (creating issues is cheap).

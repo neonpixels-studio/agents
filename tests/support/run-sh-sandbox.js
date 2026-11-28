@@ -21,10 +21,18 @@ const DIRENV_STUB = '#!/bin/bash\nshift 2\nexec "$@"\n';
 // whatever output and exit code the test asked for.
 const CLAUDE_STUB = `#!/bin/bash
 pwd > "$HOME/claude-cwd"
+printf '%s' "\${AGENTS_RUN_LOG:-}" > "$HOME/claude-run-log"
 printf '%s' "\${STUB_STDOUT:-}"
 printf '%s' "\${STUB_STDERR:-}" >&2
 exit "\${STUB_EXIT:-0}"
 `;
+
+// The scripts run.sh calls, copied next to it in the sandbox workspace.
+const SCRIPTS = [
+  'validate-config.mjs',
+  'trim-logs.mjs',
+  'read-usage-meters.sh',
+];
 
 // The directory of the node running the tests, so run.sh's config validator
 // finds the same node on PATH locally (nvm) and in CI (setup-node).
@@ -51,13 +59,11 @@ export function createSandbox({ config } = {}) {
   mkdirSync(sandbox.limitedBin);
   mkdirSync(join(sandbox.workspace, 'scripts'));
   copyFileSync(repoPath('run.sh'), join(sandbox.workspace, 'run.sh'));
-  copyFileSync(
-    repoPath('scripts/validate-config.mjs'),
-    join(sandbox.workspace, 'scripts', 'validate-config.mjs'),
-  );
-  copyFileSync(
-    repoPath('scripts/trim-logs.mjs'),
-    join(sandbox.workspace, 'scripts', 'trim-logs.mjs'),
+  SCRIPTS.forEach((script) =>
+    copyFileSync(
+      repoPath(`scripts/${script}`),
+      join(sandbox.workspace, 'scripts', script),
+    ),
   );
   writeExecutable(join(sandbox.bin, 'direnv'), DIRENV_STUB);
   writeExecutable(join(sandbox.bin, 'claude'), CLAUDE_STUB);

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readConfig } from './support/repo-files.js';
+import { readConfig, readRepoFile } from './support/repo-files.js';
 import {
   createSandbox,
   limitedPath,
@@ -11,6 +11,7 @@ import {
   removeSandbox,
   runRunSh,
 } from './support/run-sh-sandbox.js';
+import { rateLimitEvent, runLogWith } from './support/usage-events.js';
 
 const ERROR_LOG = '~/vault/Errors.md';
 const DEAD_PID = '999999';
@@ -238,4 +239,116 @@ describe('run.sh lock', () => {
       previousRun.kill();
     }
   });
+});
+
+describe('run.sh usage-meter skip', () => {
+  const writeRunLog = (...events) =>
+    writeFileSync(
+      join(sandbox.home, 'Library', 'Logs', 'agents.log'),
+      runLogWith(...events),
+    );
+
+  it('skips without starting claude when weekly usage is over the threshold', () => {
+    setUp();
+    writeRunLog(rateLimitEvent({ weekly: 0.86, session: 0.32 }));
+
+    const result = runRunSh(sandbox);
+
+    expect(result.status).toBe(0);
+    expect(claudeRan()).toBe(false);
+    expect(errorTable()).toContain(
+      '| agents | all | Weekly usage above 85%: run skipped. Weekly: 86% \\| Session: 32% |',
+    );
+    expect(runLog()).toContain('=== Run skipped: Weekly usage above 85%');
+  });
+
+  it('skips when a fresh session reading is over the threshold', () => {
+    setUp();
+    writeRunLog(rateLimitEvent({ weekly: 0.5, session: 0.75 }));
+
+    const result = runRunSh(sandbox);
+
+    expect(result.status).toBe(0);
+    expect(claudeRan()).toBe(false);
+    expect(errorTable()).toContain(
+      'Session usage above 75%: run skipped. Weekly: 50% \\| Session: 75%',
+    );
+  });
+
+  it('names both meters when both are over', () => {
+    setUp();
+    writeRunLog(rateLimitEvent({ weekly: 0.9, session: 0.8 }));
+
+    runRunSh(sandbox);
+
+    expect(errorTable()).toContain(
+      'Weekly usage above 85% and Session usage above 75%: run skipped.',
+    );
+  });
+
+  it('runs when the session reading is from a window that has since reset', () => {
+    setUp();
+    writeRunLog(
+      rateLimitEvent({ weekly: 0.5, session: 0.95, sessionResetsInHours: -1 }),
+    );
+
+    runRunSh(sandbox);
+
+    expect(claudeRan()).toBe(true);
+    expect(errorTable()).toBeNull();
+  });
+
+  it('judges only the latest event', () => {
+    setUp();
+    writeRunLog(
+      rateLimitEvent({ weekly: 0.95, session: 0.9 }),
+      rateLimitEvent({ weekly: 0.5, session: 0.2 }),
+    );
+
+    runRunSh(sandbox);
+
+    expect(claudeRan()).toBe(true);
+  });
+
+  it.each([
+    ['no event', []],
+    ['a malformed event line', ['{"type":"rate_limit_event", broken']],
+  ])('runs without an error row when the log has %s', (_case, lines) => {
+    setUp();
+    writeRunLog(...lines);
+
+    runRunSh(sandbox);
+
+    expect(claudeRan()).toBe(true);
+    expect(errorTable()).toBeNull();
+  });
+
+  it('tells the orchestrator where the run log is', () => {
+    setUp();
+
+    runRunSh(sandbox);
+
+    expect(readSandboxFile(sandbox, 'claude-run-log')).toBe(
+      join(sandbox.home, 'Library', 'Logs', 'agents.log'),
+    );
+  });
+
+  it.each([
+    ['Weekly', 'WEEKLY'],
+    ['Session', 'SESSION'],
+  ])(
+    'skips on the %s threshold in the CLAUDE.md Usage Limits table',
+    (meter, variable) => {
+      const tableRow = readRepoFile('CLAUDE.md').match(
+        new RegExp(`^\\| ${meter} usage\\s*\\| ≥ (\\d+)%`, 'm'),
+      );
+      const runShValue = readRepoFile('run.sh').match(
+        new RegExp(`^${variable}_SKIP_THRESHOLD=([\\d.]+)$`, 'm'),
+      );
+
+      expect(tableRow).not.toBeNull();
+      expect(runShValue).not.toBeNull();
+      expect(Number(runShValue[1]) * 100).toBeCloseTo(Number(tableRow[1]));
+    },
+  );
 });
